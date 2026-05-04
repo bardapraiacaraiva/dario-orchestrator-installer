@@ -1,0 +1,25 @@
+{
+  "name": "@dario-ai/orchestrator",
+  "version": "2.1.0",
+  "description": "DARIO Orchestrator v2.1-ALIVE — Self-Evolving AI Agent OS for Claude Code. One command install.",
+  "keywords": ["claude-code", "orchestrator", "ai-agents", "self-evolving", "multi-agent", "automation"],
+  "author": "Barda <bardapraiacaraiva@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bardapraiacaraiva/dario-orchestrator"
+  },
+  "bin": {
+    "dario-install": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "templates/",
+    "runtime/",
+    "skills/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
