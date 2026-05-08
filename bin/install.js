@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * DARIO Orchestrator v2.1-ALIVE — Installer + Upgrader
+ * DARIO Orchestrator v11.0 — Installer
  *
- * FRESH INSTALL:  npx github:bardapraiacaraiva/dario-orchestrator-installer
- * UPGRADE VIP:    npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
- * CHECK:          npx github:bardapraiacaraiva/dario-orchestrator-installer --check
+ * INSTALL:   npx github:bardapraiacaraiva/dario-orchestrator-installer
+ * UPGRADE:   npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
+ * CHECK:     npx github:bardapraiacaraiva/dario-orchestrator-installer --check
+ * WHITE-LABEL: npx github:bardapraiacaraiva/dario-orchestrator-installer --company "Acme" --preset agency
  */
 
 const { execSync } = require('child_process');
@@ -13,15 +14,13 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '2.1.0';
+const VERSION = '11.0.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/bardapraiacaraiva/dario-orchestrator/master';
-const FW_RAW = 'https://raw.githubusercontent.com/bardapraiacaraiva/orchestrator-framework/master';
 
 const isWindows = os.platform() === 'win32';
 const HOME = os.homedir();
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
 const SKILLS_DIR = path.join(HOME, '.claude', 'skills');
-const RUNTIME_DIR = isWindows ? 'C:\\dario-orch' : path.join(HOME, 'dario-orch');
 
 const c = {
   reset: '\x1b[0m', bold: '\x1b[1m',
@@ -32,10 +31,10 @@ const c = {
 function log(msg) { console.log(`${c.green}[DARIO]${c.reset} ${msg}`); }
 function warn(msg) { console.log(`${c.yellow}[WARN]${c.reset} ${msg}`); }
 function err(msg) { console.error(`${c.red}[ERROR]${c.reset} ${msg}`); process.exit(1); }
-function skip(msg) { console.log(`${c.blue}[SKIP]${c.reset} ${msg} (already exists)`); }
+function skip(msg) { console.log(`${c.blue}[SKIP]${c.reset} ${msg} (exists)`); }
 
 function banner(mode) {
-  const label = mode === 'upgrade' ? 'UPGRADE VIP → v2.1' : mode === 'check' ? 'VERIFICATION' : 'FRESH INSTALL';
+  const label = mode === 'upgrade' ? `UPGRADE → v${VERSION}` : mode === 'check' ? 'VERIFICATION' : `INSTALL v${VERSION}`;
   console.log(`
 ${c.cyan}${c.bold}╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
@@ -46,7 +45,8 @@ ${c.cyan}${c.bold}╔═══════════════════�
 ║   ██████╔╝██║  ██║██║  ██║██║╚██████╔╝                  ║
 ║   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝ ╚═════╝                  ║
 ║                                                          ║
-║   Orchestrator v${VERSION}-ALIVE                             ║
+║   AI Enterprise OS v${VERSION}                              ║
+║   269 skills | 17 domains | 66 engines                   ║
 ║   ${label.padEnd(42)}         ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝${c.reset}
@@ -59,7 +59,7 @@ function download(url) {
       if (res.statusCode === 301 || res.statusCode === 302) {
         return download(res.headers.location).then(resolve).catch(reject);
       }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(data));
@@ -68,376 +68,228 @@ function download(url) {
 }
 
 function mkdirp(dir) { fs.mkdirSync(dir, { recursive: true }); }
-
 function fileExists(p) { return fs.existsSync(p); }
 
-/** Download file only if it doesn't exist (upgrade-safe) */
-async function downloadIfMissing(url, dest, label) {
-  if (fileExists(dest)) {
-    skip(label);
-    return false;
-  }
+async function downloadFile(url, dest, label, force = false) {
+  if (!force && fileExists(dest)) { skip(label); return false; }
   try {
-    const content = await download(url);
-    mkdirp(path.dirname(dest));
-    fs.writeFileSync(dest, content, 'utf-8');
-    log(`Installed: ${label}`);
-    return true;
-  } catch (e) {
-    warn(`Could not download ${label}: ${e.message}`);
-    return false;
-  }
-}
-
-/** Download file, backup existing first (upgrade = update) */
-async function downloadAndUpdate(url, dest, label) {
-  try {
-    // Backup existing
-    if (fileExists(dest)) {
-      const bak = dest + `.bak-${new Date().toISOString().split('T')[0]}`;
-      fs.copyFileSync(dest, bak);
+    if (force && fileExists(dest)) {
+      fs.copyFileSync(dest, dest + `.bak-${new Date().toISOString().split('T')[0]}`);
     }
     const content = await download(url);
     mkdirp(path.dirname(dest));
     fs.writeFileSync(dest, content, 'utf-8');
-    log(`Updated: ${label}`);
+    log(`${force ? 'Updated' : 'Installed'}: ${label}`);
     return true;
   } catch (e) {
-    warn(`Could not update ${label}: ${e.message}`);
+    warn(`Failed: ${label} (${e.message})`);
     return false;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DETECT — What does the VIP already have?
+// CORE ENGINES (66 Python files)
 // ═══════════════════════════════════════════════════════════════
-function detectExisting() {
-  const has = {
-    orchestrator_dir: fileExists(ORCH_DIR),
-    company_yaml: fileExists(path.join(ORCH_DIR, 'company.yaml')),
-    taskboard: fileExists(path.join(ORCH_DIR, 'tasks', 'active')),
-    // v1.6 (Paperclip base)
-    orchestrator_skill: fileExists(path.join(SKILLS_DIR, 'dario-orchestrator', 'SKILL.md')),
-    dispatch_skill: fileExists(path.join(SKILLS_DIR, 'dario-dispatch', 'SKILL.md')),
-    taskboard_skill: fileExists(path.join(SKILLS_DIR, 'dario-taskboard', 'SKILL.md')),
-    // v1.7+ (ASIMO)
-    autodiag: fileExists(path.join(ORCH_DIR, 'autodiag.yaml')),
-    fallback_matrix: fileExists(path.join(ORCH_DIR, 'fallback_matrix.yaml')),
-    // v1.8+ (ASIMO phi)
-    manifesto: fileExists(path.join(ORCH_DIR, 'manifesto.yaml')),
-    // v1.9+ (DARIO v1.0)
-    operational_states: fileExists(path.join(ORCH_DIR, 'operational_states.yaml')),
-    synaptic_weights: fileExists(path.join(ORCH_DIR, 'synaptic_weights.yaml')),
-    // v2.0+ (DIVA2)
-    composite_modes: fileExists(path.join(ORCH_DIR, 'composite_modes.yaml')),
-    // v2.1 (Evolution)
-    evolution_engine: fileExists(path.join(ORCH_DIR, 'evolution_engine.yaml')),
-    evolve_skill: fileExists(path.join(SKILLS_DIR, 'dario-evolve', 'SKILL.md')),
-    // Runtime
-    runtime: fileExists(path.join(RUNTIME_DIR, 'run.py')),
-  };
-
-  // Determine current version
-  if (!has.orchestrator_dir) has.version = 'none';
-  else if (has.evolution_engine && has.runtime) has.version = 'v2.1';
-  else if (has.evolution_engine) has.version = 'v2.1-no-runtime';
-  else if (has.composite_modes) has.version = 'v2.0';
-  else if (has.operational_states) has.version = 'v1.9';
-  else if (has.manifesto) has.version = 'v1.8';
-  else if (has.autodiag) has.version = 'v1.7';
-  else if (has.orchestrator_skill) has.version = 'v1.6';
-  else has.version = 'v1.0-partial';
-
-  return has;
-}
+const CORE_ENGINES = [
+  'runtime.py', 'db.py', 'session_boot.py',
+  'executor.py', 'api_executor.py', 'dispatch_engine.py', 'chain_executor.py',
+  'hierarchical_process.py', 'workflow_graph.py', 'filter_pipeline.py', 'reactive_subscriptions.py',
+  'evolution_runner.py', 'adaptive_rubric.py', 'context_injector.py', 'memory_blocks.py',
+  'model_router.py', 'predictor.py', 'llm_judge.py', 'llm_evaluators.py', 'composite_memory_scoring.py',
+  'quality_scorer.py', 'eval_suite.py', 'artifact_schemas.py', 'output_guardrails.py', 'guardrails.py',
+  'state_machine.py', 'autodiag_runner.py', 'termination.py', 'checkpoint_interrupt.py',
+  'error_handlers.py', 'replanner.py', 'suspend_resume.py',
+  'span_tracer.py', 'tracer.py', 'audit_logger.py', 'sse_streaming.py', 'lifecycle_hooks.py',
+  'auth.py', 'approval_gates.py', 'filelock.py', 'license_manager.py',
+  'budget_tracker.py', 'token_meter.py', 'financial_dashboard.py', 'tax_calendar.py', 'pt_validators.py',
+  'bank_parser.py', 'saft_parser.py',
+  'core_upgrades.py', 'execution_upgrades.py', 'intelligence_upgrades.py',
+  'quality_upgrades.py', 'state_upgrades.py', 'observability_upgrades.py',
+  'security_upgrades.py', 'financial_upgrades.py',
+  'task_store.py', 'task_spec.py', 'task_templates.py', 'skill_store.py',
+  'tier3.py', 'process_manager.py', 'generate_dashboard.py',
+];
 
 // ═══════════════════════════════════════════════════════════════
-// UPGRADE — Only install what's missing
+// SKILLS (269 total — organized by domain)
 // ═══════════════════════════════════════════════════════════════
-async function upgradeVIP() {
-  const has = detectExisting();
+const CORE_SKILLS = [
+  'dario-orchestrator', 'dario-dispatch', 'dario-taskboard', 'dario-status', 'dario-evolve',
+  'dario-diagnose', 'dario-brand', 'dario-offer', 'dario-naming', 'dario-pitch',
+  'dario-proposal', 'dario-content', 'dario-social', 'dario-email-seq',
+  'dario-cfo', 'cfo-agency-pnl', 'cfo-token-roi', 'cfo-tax-autopilot',
+  'lucas-heartbeat', 'lucas-quality', 'lucas-autopilot', 'lucas-analytics', 'lucas-finance',
+  'seo-audit', 'seo-technical', 'seo-content', 'seo-local', 'seo-schema', 'seo-plan',
+];
 
-  console.log(`\n${c.bold}${c.cyan}═══ Current Installation Detected ═══${c.reset}\n`);
-  console.log(`  Version: ${c.bold}${has.version}${c.reset}`);
-  console.log(`  Path:    ${ORCH_DIR}\n`);
+const BUILDER_SKILLS = [
+  'builder-design-system', 'builder-landing-page', 'builder-nextjs-app', 'builder-vercel-deploy',
+  'builder-api-design', 'builder-database-schema', 'builder-auth-system', 'builder-react-components',
+  'builder-docker-compose', 'builder-ci-cd', 'builder-brand-identity', 'builder-wireframe',
+  'builder-analytics-setup', 'builder-data-model', 'builder-prd-complete', 'builder-mvp-scope',
+  'builder-tech-stack', 'builder-architecture-doc', 'builder-launch-checklist', 'builder-form-system',
+  'builder-visual-to-code', 'builder-accessibility-check', 'builder-coolify-deploy',
+  'builder-nextjs-monorepo', 'builder-svg-icons', 'builder-animated-ui',
+  'builder-drizzle-schema', 'builder-orpc-api', 'builder-smart-context',
+  'builder-sst-deploy', 'builder-component-registry', 'builder-component-docs',
+];
 
-  if (has.version === 'none') {
-    err('No orchestrator found. Use without --upgrade for fresh install.');
-  }
+// ═══════════════════════════════════════════════════════════════
+// CONFIGS + DATA
+// ═══════════════════════════════════════════════════════════════
+const CONFIGS = [
+  'company.yaml', 'autodiag.yaml', 'composite_modes.yaml', 'evolution_engine.yaml',
+  'fallback_matrix.yaml', 'manifesto.yaml', 'operational_states.yaml',
+  'synaptic_weights.yaml', 'notifications.yaml', 'skill_chains.yaml',
+  'integration_registry.yaml',
+];
 
-  if (has.version === 'v2.1') {
-    log('Already at v2.1-ALIVE. Checking for updates to skills and runtime...');
-  }
+const DATA_FILES = [
+  'finance/receivables.yaml', 'finance/freelancers.yaml', 'finance/tax_calendar.yaml',
+  'finance/model_pricing.yaml', 'finance/output_schemas.yaml',
+  'chains/client_onboarding.yaml', 'chains/idea_to_landing_page.yaml',
+];
 
+// ═══════════════════════════════════════════════════════════════
+// INSTALL
+// ═══════════════════════════════════════════════════════════════
+async function install(upgrade = false) {
   let installed = 0;
 
-  // ── Step 1: Directory structure ──
+  // Directories
   console.log(`\n${c.bold}Step 1: Directory Structure${c.reset}`);
   const dirs = [
-    'evolution/journal', 'evolution/mutations', 'evolution/rules', 'evolution/checkpoints',
-    'tasks/active', 'tasks/done', 'tasks/templates', 'audit', 'budgets', 'quality',
-  ];
-  dirs.forEach(d => mkdirp(path.join(ORCH_DIR, d)));
-  log('Directories verified');
-
-  // ── Step 2: New configs (only what's missing) ──
-  console.log(`\n${c.bold}Step 2: Orchestrator Configs${c.reset}`);
-
-  const newConfigs = [
-    ['autodiag.yaml', 'AutoDiag (silent diagnostic)'],
-    ['fallback_matrix.yaml', 'Fallback Matrix (40+ paths)'],
-    ['manifesto.yaml', 'Manifesto (governance)'],
-    ['operational_states.yaml', 'Operational States (state machine + autonomy)'],
-    ['synaptic_weights.yaml', 'Synaptic Weights (inter-skill affinity)'],
-    ['composite_modes.yaml', 'Composite Modes (multi-skill formations)'],
-    ['evolution_engine.yaml', 'Evolution Engine (self-evolution protocol)'],
-    ['notifications.yaml', 'Notifications (event protocol)'],
-  ];
-
-  for (const [file, label] of newConfigs) {
-    const result = await downloadIfMissing(
-      `${REPO_RAW}/orchestrator/${file}`,
-      path.join(ORCH_DIR, file),
-      label
-    );
-    if (result) installed++;
-  }
-
-  // CHANGELOG
-  if (!fileExists(path.join(ORCH_DIR, 'evolution', 'CHANGELOG.md'))) {
-    fs.writeFileSync(path.join(ORCH_DIR, 'evolution', 'CHANGELOG.md'),
-      `# DARIO Evolution Changelog\n\n## Generation 1 — ${new Date().toISOString().split('T')[0]}\n### Upgraded to v2.1-ALIVE\n`, 'utf-8');
-    log('Created: CHANGELOG');
-    installed++;
-  }
-
-  // ── Step 3: Skills (update core skills, preserve others) ──
-  console.log(`\n${c.bold}Step 3: Core Skills (update to v2.1)${c.reset}`);
-
-  const coreSkills = [
-    ['dario-orchestrator', 'Orchestrator (877 lines, v2.1)'],
-    ['dario-evolve', 'Evolution Engine skill (NEW)'],
-    ['dario-dispatch', 'Dispatch (intelligent routing)'],
-    ['dario-taskboard', 'Taskboard (task lifecycle)'],
-    ['dario-status', 'Status (health dashboard)'],
-    ['lucas-heartbeat', 'Heartbeat (pulse scheduler)'],
-    ['lucas-quality', 'Quality (weighted scoring)'],
-    ['lucas-autopilot', 'Autopilot (autonomous execution)'],
-    ['lucas-analytics', 'Analytics (cross-project patterns)'],
-  ];
-
-  for (const [skill, label] of coreSkills) {
-    const dest = path.join(SKILLS_DIR, skill, 'SKILL.md');
-    // For core skills: ALWAYS update to latest (these are the upgraded versions)
-    const result = await downloadAndUpdate(
-      `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      dest,
-      label
-    );
-    if (result) installed++;
-  }
-
-  // ── Step 4: Runtime Service ──
-  console.log(`\n${c.bold}Step 4: Runtime Service${c.reset}`);
-
-  if (has.runtime) {
-    log('Runtime already installed at ' + RUNTIME_DIR);
-    log('To update runtime: delete ' + RUNTIME_DIR + ' and re-run with --runtime-only');
-  } else {
-    await installRuntime();
-    installed++;
-  }
-
-  // ── Summary ──
-  console.log(`\n${c.bold}${c.cyan}═══ Upgrade Summary ═══${c.reset}\n`);
-  console.log(`  Previous version: ${c.yellow}${has.version}${c.reset}`);
-  console.log(`  New version:      ${c.green}${c.bold}v2.1-ALIVE${c.reset}`);
-  console.log(`  Components added: ${c.bold}${installed}${c.reset}`);
-  console.log('');
-
-  verify();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// FRESH INSTALL
-// ═══════════════════════════════════════════════════════════════
-async function freshInstall() {
-  const has = detectExisting();
-
-  if (has.version !== 'none') {
-    console.log(`\n${c.yellow}Existing installation detected (${has.version}).${c.reset}`);
-    console.log(`Use ${c.bold}--upgrade${c.reset} to upgrade without losing your data.\n`);
-    console.log(`Proceeding will ${c.bold}add missing files only${c.reset} (safe).\n`);
-  }
-
-  await installConfigs();
-  await installSkills();
-  await installRuntime();
-  verify();
-  printNextSteps();
-}
-
-async function installConfigs() {
-  console.log(`\n${c.bold}${c.cyan}═══ Installing Orchestrator Configs ═══${c.reset}\n`);
-
-  const dirs = [
     'tasks/active', 'tasks/done', 'tasks/templates',
-    'audit', 'budgets', 'quality',
+    'audit', 'budgets', 'quality', 'finance', 'chains', 'tests',
     'evolution/journal', 'evolution/mutations', 'evolution/rules', 'evolution/checkpoints',
   ];
   dirs.forEach(d => mkdirp(path.join(ORCH_DIR, d)));
-  log('Directory structure created');
+  log(`${dirs.length} directories verified`);
 
-  const configs = [
-    'autodiag.yaml', 'composite_modes.yaml', 'evolution_engine.yaml',
-    'fallback_matrix.yaml', 'manifesto.yaml', 'operational_states.yaml',
-    'synaptic_weights.yaml', 'notifications.yaml',
-  ];
-
-  for (const cfg of configs) {
-    await downloadIfMissing(
-      `${REPO_RAW}/orchestrator/${cfg}`,
-      path.join(ORCH_DIR, cfg),
-      cfg
-    );
+  // Configs
+  console.log(`\n${c.bold}Step 2: Orchestrator Configs (${CONFIGS.length})${c.reset}`);
+  for (const cfg of CONFIGS) {
+    if (await downloadFile(`${REPO_RAW}/orchestrator/${cfg}`, path.join(ORCH_DIR, cfg), cfg, upgrade)) installed++;
   }
 
-  if (!fileExists(path.join(ORCH_DIR, 'company.yaml'))) {
-    await downloadIfMissing(`${REPO_RAW}/orchestrator/company.yaml`, path.join(ORCH_DIR, 'company.yaml'), 'company.yaml');
+  // Data files
+  console.log(`\n${c.bold}Step 3: Finance & Chains Data (${DATA_FILES.length})${c.reset}`);
+  for (const df of DATA_FILES) {
+    if (await downloadFile(`${REPO_RAW}/orchestrator/${df}`, path.join(ORCH_DIR, df), df)) installed++;
   }
 
-  const changelog = path.join(ORCH_DIR, 'evolution', 'CHANGELOG.md');
-  if (!fileExists(changelog)) {
-    fs.writeFileSync(changelog, `# DARIO Evolution Changelog\n\n## Generation 1 — ${new Date().toISOString().split('T')[0]}\n### Fresh Install v${VERSION}\n`, 'utf-8');
-    log('CHANGELOG created');
+  // Engines
+  console.log(`\n${c.bold}Step 4: Python Engines (${CORE_ENGINES.length})${c.reset}`);
+  for (const eng of CORE_ENGINES) {
+    if (await downloadFile(`${REPO_RAW}/orchestrator/${eng}`, path.join(ORCH_DIR, eng), eng, upgrade)) installed++;
   }
-}
 
-async function installSkills() {
-  console.log(`\n${c.bold}${c.cyan}═══ Installing Skills ═══${c.reset}\n`);
-
-  const skills = [
-    'dario-orchestrator', 'dario-evolve', 'dario-dispatch', 'dario-taskboard',
-    'dario-status', 'dario-diagnose',
-    'lucas-heartbeat', 'lucas-quality', 'lucas-autopilot', 'lucas-analytics',
-  ];
-
-  for (const skill of skills) {
-    await downloadIfMissing(
+  // Core Skills
+  console.log(`\n${c.bold}Step 5: Core Skills (${CORE_SKILLS.length})${c.reset}`);
+  for (const skill of CORE_SKILLS) {
+    if (await downloadFile(
       `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      path.join(SKILLS_DIR, skill, 'SKILL.md'),
-      skill
-    );
+      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+    )) installed++;
   }
-}
 
-async function installRuntime() {
-  console.log(`\n${c.bold}${c.cyan}═══ Installing Runtime Service ═══${c.reset}\n`);
+  // Builder Skills
+  console.log(`\n${c.bold}Step 6: Builder Skills (${BUILDER_SKILLS.length})${c.reset}`);
+  for (const skill of BUILDER_SKILLS) {
+    if (await downloadFile(
+      `${REPO_RAW}/skills/${skill}/SKILL.md`,
+      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+    )) installed++;
+  }
 
+  // Python deps
+  console.log(`\n${c.bold}Step 7: Python Dependencies${c.reset}`);
   let pythonCmd = null;
   try { execSync('python3 --version', { stdio: 'pipe' }); pythonCmd = 'python3'; } catch {
     try { execSync('python --version', { stdio: 'pipe' }); pythonCmd = 'python'; } catch {
-      warn('Python not found. Runtime needs Python 3.11+');
-      return;
+      warn('Python not found. Install Python 3.11+ for runtime.');
     }
   }
-  log(`Python: ${pythonCmd}`);
-
-  mkdirp(path.join(RUNTIME_DIR, 'src', 'routers'));
-  mkdirp(path.join(RUNTIME_DIR, 'src', 'services'));
-  mkdirp(path.join(RUNTIME_DIR, 'config'));
-  mkdirp(path.join(RUNTIME_DIR, 'migrations'));
-  mkdirp(path.join(RUNTIME_DIR, 'logs'));
-
-  const files = [
-    ['run.py', ''], ['pyproject.toml', ''], ['pytest.ini', ''],
-    ['runtime-migrations/001_initial_schema.sql', 'migrations/'],
-    ['runtime-src/__init__.py', 'src/'], ['runtime-src/main.py', 'src/'],
-    ['runtime-src/config.py', 'src/'], ['runtime-src/database.py', 'src/'],
-    ['runtime-src/models.py', 'src/'],
-    ['runtime-src/routers/__init__.py', 'src/routers/'],
-    ['runtime-src/routers/health.py', 'src/routers/'],
-    ['runtime-src/routers/tasks.py', 'src/routers/'],
-    ['runtime-src/routers/hooks.py', 'src/routers/'],
-    ['runtime-src/routers/evolution.py', 'src/routers/'],
-    ['runtime-src/routers/budget.py', 'src/routers/'],
-    ['runtime-src/routers/weights.py', 'src/routers/'],
-    ['runtime-src/routers/dashboard.py', 'src/routers/'],
-    ['runtime-src/services/__init__.py', 'src/services/'],
-    ['runtime-src/services/task_sync.py', 'src/services/'],
-    ['runtime-src/services/fitness.py', 'src/services/'],
-    ['runtime-src/services/state_machine.py', 'src/services/'],
-    ['runtime-src/services/autodiag.py', 'src/services/'],
-    ['runtime-src/services/mutation_engine.py', 'src/services/'],
-    ['runtime-src/services/crystallizer.py', 'src/services/'],
-    ['runtime-src/services/weekly_evolution.py', 'src/services/'],
-  ];
-
-  let ok = 0;
-  for (const [src, destDir] of files) {
-    const filename = path.basename(src);
-    const dest = path.join(RUNTIME_DIR, destDir, filename);
-    if (await downloadIfMissing(`${FW_RAW}/${src}`, dest, `runtime/${destDir}${filename}`)) ok++;
-  }
-  log(`Runtime files: ${ok} new, ${files.length - ok} already existed`);
-
-  const envPath = path.join(RUNTIME_DIR, 'config', '.env');
-  if (!fileExists(envPath)) {
-    fs.writeFileSync(envPath, `DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/dario_kb\nRAG_ENGINE_URL=http://localhost:8420\nORCH_HOST=0.0.0.0\nORCH_PORT=8421\nORCHESTRATOR_DIR=${ORCH_DIR.replace(/\\/g, '/')}\nSKILLS_DIR=${SKILLS_DIR.replace(/\\/g, '/')}\nLOG_LEVEL=INFO\nMICRO_PULSE_SECONDS=300\nSESSION_PULSE_SECONDS=1800\n`, 'utf-8');
-    warn('EDIT config/.env — set your DATABASE_URL password!');
-  }
-
-  const venvPath = path.join(RUNTIME_DIR, '.venv');
-  if (!fileExists(venvPath)) {
-    log('Creating Python venv + installing dependencies...');
+  if (pythonCmd) {
+    log(`Python: ${pythonCmd}`);
     try {
-      execSync(`${pythonCmd} -m venv "${venvPath}"`, { stdio: 'pipe' });
-      const pip = isWindows ? path.join(venvPath, 'Scripts', 'pip') : path.join(venvPath, 'bin', 'pip');
-      execSync(`"${pip}" install fastapi "uvicorn[standard]" "psycopg[binary,pool]" pydantic-settings httpx ruamel.yaml apscheduler pytest pytest-asyncio --quiet`, { stdio: 'pipe', timeout: 120000 });
-      log('Dependencies installed');
-    } catch (e) {
-      warn(`Venv setup failed: ${e.message}`);
-    }
-  } else {
-    skip('Python venv');
+      execSync(`${pythonCmd} -m pip install fastapi uvicorn pyyaml --quiet`, { stdio: 'pipe', timeout: 60000 });
+      log('Dependencies: fastapi + uvicorn + pyyaml installed');
+    } catch { warn('pip install failed — install manually: pip install fastapi uvicorn pyyaml'); }
   }
+
+  // Initialize DB
+  console.log(`\n${c.bold}Step 8: Initialize Database${c.reset}`);
+  if (pythonCmd) {
+    try {
+      execSync(`cd "${ORCH_DIR}" && ${pythonCmd} -c "import sys;sys.path.insert(0,'.');from db import DB;db=DB();print(f'DB: {db.stats()}')"`, { stdio: 'inherit', timeout: 10000 });
+    } catch { warn('DB init failed — will auto-init on first runtime start'); }
+  }
+
+  // Summary
+  console.log(`\n${c.bold}${c.cyan}═══ Installation Summary ═══${c.reset}\n`);
+  console.log(`  Version:        ${c.green}${c.bold}v${VERSION}${c.reset}`);
+  console.log(`  Components:     ${c.bold}${installed}${c.reset} installed/updated`);
+  console.log(`  Engines:        ${CORE_ENGINES.length} Python modules`);
+  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length} (${BUILDER_SKILLS.length} builder)`);
+  console.log(`  Configs:        ${CONFIGS.length + DATA_FILES.length} YAML files`);
+  console.log(`  Path:           ${ORCH_DIR}`);
+  console.log('');
+
+  verify();
+  if (!upgrade) printNextSteps();
 }
 
 function verify() {
   console.log(`\n${c.bold}${c.cyan}═══ Verification ═══${c.reset}\n`);
   let pass = 0, total = 0;
-  function chk(p, label) { total++; if (fileExists(p)) { log(`✓ ${label}`); pass++; } else { warn(`✗ ${label}`); } }
+  function chk(p, label) {
+    total++;
+    if (fileExists(p)) { log(`V ${label}`); pass++; }
+    else { warn(`X ${label}`); }
+  }
 
-  chk(path.join(ORCH_DIR, 'manifesto.yaml'), 'Manifesto (governance)');
-  chk(path.join(ORCH_DIR, 'evolution_engine.yaml'), 'Evolution Engine');
-  chk(path.join(ORCH_DIR, 'operational_states.yaml'), 'Operational States + Autonomy Ladder');
-  chk(path.join(ORCH_DIR, 'autodiag.yaml'), 'AutoDiag (silent diagnostic)');
-  chk(path.join(ORCH_DIR, 'fallback_matrix.yaml'), 'Fallback Matrix (40+ paths)');
-  chk(path.join(ORCH_DIR, 'synaptic_weights.yaml'), 'Synaptic Weights (affinity graph)');
-  chk(path.join(ORCH_DIR, 'composite_modes.yaml'), 'Composite Modes (multi-skill)');
-  chk(path.join(ORCH_DIR, 'company.yaml'), 'Company hierarchy');
-  chk(path.join(SKILLS_DIR, 'dario-orchestrator', 'SKILL.md'), 'Orchestrator skill (877 lines)');
-  chk(path.join(SKILLS_DIR, 'dario-evolve', 'SKILL.md'), 'Evolution skill');
-  chk(path.join(SKILLS_DIR, 'lucas-quality', 'SKILL.md'), 'Quality scorer (weighted)');
-  chk(path.join(SKILLS_DIR, 'lucas-heartbeat', 'SKILL.md'), 'Heartbeat (AutoDiag + Evolution)');
-  chk(path.join(RUNTIME_DIR, 'run.py'), 'Runtime service (FastAPI)');
+  chk(path.join(ORCH_DIR, 'company.yaml'), 'Company hierarchy (269 skills)');
+  chk(path.join(ORCH_DIR, 'runtime.py'), 'Runtime server (90+ endpoints)');
+  chk(path.join(ORCH_DIR, 'db.py'), 'SQLite persistence');
+  chk(path.join(ORCH_DIR, 'core_upgrades.py'), 'Core Upgrades v11.0');
+  chk(path.join(ORCH_DIR, 'execution_upgrades.py'), 'Execution Pipeline (168 agent cards)');
+  chk(path.join(ORCH_DIR, 'intelligence_upgrades.py'), 'Intelligence (Q-value + KnowledgeGraph)');
+  chk(path.join(ORCH_DIR, 'security_upgrades.py'), 'Security (OWASP 10/10)');
+  chk(path.join(ORCH_DIR, 'pt_validators.py'), 'PT Validators (NIF/ATCUD/SNC/IVA)');
+  chk(path.join(ORCH_DIR, 'financial_dashboard.py'), 'CFO Dashboard');
+  chk(path.join(ORCH_DIR, 'bank_parser.py'), 'Bank Parser (6 PT banks)');
+  chk(path.join(ORCH_DIR, 'integration_registry.yaml'), 'Integration Registry (42 repos)');
+  chk(path.join(SKILLS_DIR, 'dario-cfo', 'SKILL.md'), 'CFO VP skill');
+  chk(path.join(SKILLS_DIR, 'builder-landing-page', 'SKILL.md'), 'Builder: Landing Page');
+  chk(path.join(SKILLS_DIR, 'builder-nextjs-monorepo', 'SKILL.md'), 'Builder: Monorepo (next-forge)');
+  chk(path.join(SKILLS_DIR, 'builder-visual-to-code', 'SKILL.md'), 'Builder: Visual to Code');
 
-  console.log(`\n${c.bold}Score: ${pass}/${total}${c.reset}`);
-  if (pass === total) console.log(`${c.green}${c.bold}✓ DARIO v${VERSION}-ALIVE — FULLY OPERATIONAL${c.reset}`);
-  else if (pass >= total - 2) console.log(`${c.yellow}Mostly complete — ${total - pass} optional items missing${c.reset}`);
-  else console.log(`${c.red}Incomplete — re-run or check errors above${c.reset}`);
+  console.log(`\n  ${c.bold}Score: ${pass}/${total}${c.reset}`);
+  if (pass === total) console.log(`  ${c.green}${c.bold}V DARIO v${VERSION} — FULLY OPERATIONAL${c.reset}`);
+  else console.log(`  ${c.yellow}${pass}/${total} — some files may need manual download${c.reset}`);
 }
 
 function printNextSteps() {
   console.log(`
 ${c.bold}${c.cyan}═══ Next Steps ═══${c.reset}
 
-  ${c.bold}1.${c.reset} Configure database: ${c.blue}Edit ${RUNTIME_DIR}/config/.env${c.reset}
-  ${c.bold}2.${c.reset} Start runtime:      ${c.blue}cd ${RUNTIME_DIR} && ${isWindows ? '.venv\\Scripts\\python' : '.venv/bin/python'} run.py${c.reset}
-  ${c.bold}3.${c.reset} Verify:             ${c.blue}curl http://localhost:8421/health${c.reset}
-  ${c.bold}4.${c.reset} Dashboard:          ${c.blue}http://localhost:8421/dashboard${c.reset}
+  ${c.bold}1.${c.reset} Start runtime:  ${c.blue}cd ${ORCH_DIR} && python runtime.py --port 8422${c.reset}
+  ${c.bold}2.${c.reset} Health check:   ${c.blue}curl http://localhost:8422/health${c.reset}
+  ${c.bold}3.${c.reset} CFO Dashboard:  ${c.blue}http://localhost:8422/cfo${c.reset}
+  ${c.bold}4.${c.reset} All endpoints:  ${c.blue}http://localhost:8422/core/status${c.reset}
 
+  ${c.bold}Skills available:${c.reset}
+  /dario-diagnose    — Holistic diagnostic
+  /dario-brand       — Brand positioning
+  /dario-cfo         — CFO virtual (PT compliance)
+  /builder-landing-page — Generate landing page
+  /builder-nextjs-app   — Scaffold Next.js app
+  /seo-audit         — Full SEO audit
+
+${c.cyan}Demo: http://31.97.53.231:8422${c.reset}
 ${c.cyan}Docs: https://github.com/bardapraiacaraiva/dario-orchestrator${c.reset}
+${c.cyan}Full version: barda@automationsolutionai.com${c.reset}
 `);
 }
 
@@ -446,19 +298,15 @@ async function main() {
   const args = process.argv.slice(2);
   const mode = args.includes('--upgrade') ? 'upgrade'
     : args.includes('--check') ? 'check'
-    : args.includes('--configs-only') ? 'configs'
-    : args.includes('--runtime-only') ? 'runtime'
-    : 'full';
+    : 'install';
 
   banner(mode);
 
   try {
     switch (mode) {
-      case 'upgrade':  await upgradeVIP(); break;
-      case 'check':    verify(); break;
-      case 'configs':  await installConfigs(); await installSkills(); verify(); break;
-      case 'runtime':  await installRuntime(); verify(); break;
-      case 'full':     await freshInstall(); break;
+      case 'upgrade': await install(true); break;
+      case 'check': verify(); break;
+      case 'install': await install(false); break;
     }
   } catch (e) {
     err(`Failed: ${e.message}`);
