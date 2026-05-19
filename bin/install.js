@@ -14,7 +14,10 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '11.0.0';
+const VERSION = '11.1.0';
+// v11.1.0 — Cognitive Audit (2026-05-19): 18 new modules
+//   Sprints 1-4 cognitive (10) + U11-U18 operational (8) = 216 tests passing
+//   See: dario-orchestrator/COGNITIVE-AUDIT.md
 const REPO_RAW = 'https://raw.githubusercontent.com/bardapraiacaraiva/dario-orchestrator/master';
 
 const isWindows = os.platform() === 'win32';
@@ -108,6 +111,25 @@ const CORE_ENGINES = [
   'security_upgrades.py', 'financial_upgrades.py',
   'task_store.py', 'task_spec.py', 'task_templates.py', 'skill_store.py',
   'tier3.py', 'process_manager.py', 'generate_dashboard.py',
+  // ─── v11.1.0 Cognitive Audit (2026-05-19) ─────────────────────────────
+  // Sprints 1-4 cognitive layer (10 modules) + U11-U18 operational (8 modules)
+  'semantic_dispatch.py',     // U1: embedding-based skill routing
+  'ethical_gate.py',          // U2: pre-dispatch triade decisoria (Check 0)
+  'synaptic_update.py',       // U3: synaptic weights write-back runtime
+  'confidence_engine.py',     // U4: 5-way action gating (HIGH/MED/LOW)
+  'qvalue_memory_wire.py',    // U5: Q-value memory wired with SQLite
+  'chain_validator.py',       // U6: pass_to_next field validation
+  'golden_eval.py',           // U7: regression detection with goldens
+  'episode_promoter.py',      // U8: episodes -> semantic + auto-rules
+  'dispatch_cot.py',          // U9: Chain-of-Thought pre-dispatch + postmortem
+  'dynamic_branch.py',        // U10: runtime chain branching
+  'cron_daily.py',            // U12: daily background maintenance
+  'cognitive_dashboard.py',   // U13: HTML dashboard generator (8 cards)
+  'webhook_dispatcher.py',    // U15: Slack/Discord/generic alerts
+  'eval_drilldown.py',        // U16: token/section/paragraph diff + hints
+  'prompt_hints.py',          // U17: auto prompt hints from drilldowns
+  'weekly_summary.py',        // U18: cron weekly Obsidian report
+  'obsidian_safe_write.py',   // Utility: prevents Obsidian shadow files
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -264,6 +286,16 @@ function verify() {
   chk(path.join(SKILLS_DIR, 'builder-landing-page', 'SKILL.md'), 'Builder: Landing Page');
   chk(path.join(SKILLS_DIR, 'builder-nextjs-monorepo', 'SKILL.md'), 'Builder: Monorepo (next-forge)');
   chk(path.join(SKILLS_DIR, 'builder-visual-to-code', 'SKILL.md'), 'Builder: Visual to Code');
+
+  // v11.1.0 Cognitive Audit modules
+  chk(path.join(ORCH_DIR, 'semantic_dispatch.py'), 'U1: Semantic Dispatch (embeddings)');
+  chk(path.join(ORCH_DIR, 'ethical_gate.py'),      'U2: Ethical Pre-Gate (triade)');
+  chk(path.join(ORCH_DIR, 'confidence_engine.py'), 'U4: Confidence Engine (5-way gate)');
+  chk(path.join(ORCH_DIR, 'dispatch_cot.py'),      'U9: Chain-of-Thought + Postmortem');
+  chk(path.join(ORCH_DIR, 'cron_daily.py'),        'U12: Cron Daily (6 jobs)');
+  chk(path.join(ORCH_DIR, 'cognitive_dashboard.py'), 'U13: Cognitive Dashboard HTML');
+  chk(path.join(ORCH_DIR, 'webhook_dispatcher.py'), 'U15: Webhook Dispatcher');
+  chk(path.join(ORCH_DIR, 'weekly_summary.py'),    'U18: Weekly Summary');
 
   console.log(`\n  ${c.bold}Score: ${pass}/${total}${c.reset}`);
   if (pass === total) console.log(`  ${c.green}${c.bold}V DARIO v${VERSION} — FULLY OPERATIONAL${c.reset}`);

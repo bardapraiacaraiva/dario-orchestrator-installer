@@ -1,7 +1,7 @@
 {
   "name": "@dario-ai/orchestrator",
-  "version": "11.0.0",
-  "description": "DARIO Orchestrator v11.0 — AI Enterprise OS. 269 skills, 17 domains, 32 builder, CFO virtual, compliance PT. One command install.",
+  "version": "11.1.0",
+  "description": "DARIO Orchestrator v11.1 — AI Enterprise OS. 269 skills + 18 cognitive modules (Cognitive Audit), 17 domains, 32 builder, CFO virtual, compliance PT. One command install.",
   "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "builder", "cfo", "portugal"],
   "author": "Barda <barda@automationsolutionai.com>",
   "license": "SEE LICENSE IN LICENSE",
