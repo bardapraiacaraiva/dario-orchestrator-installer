@@ -1,8 +1,8 @@
 {
   "name": "@dario-ai/orchestrator",
-  "version": "11.1.1",
-  "description": "DARIO Orchestrator v11.1.1 — AI Enterprise OS. 269 skills + 18 cognitive modules + license enforcement hardening (trial leak closed). 17 domains, 32 builder, CFO virtual, compliance PT. One command install.",
-  "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "builder", "cfo", "portugal"],
+  "version": "11.3.0",
+  "description": "DARIO Orchestrator v11.3.0 — AI Enterprise OS. 299+ skills + 18 cognitive modules + LEX-BR (legal Brasil, 15 skills) + DEMETER (data engineering, 15 skills) + license enforcement hardening. One command install.",
+  "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "builder", "cfo", "lex-br", "demeter", "legal-brasil", "data-engineering", "portugal"],
   "author": "Barda <barda@automationsolutionai.com>",
   "license": "SEE LICENSE IN LICENSE",
   "repository": { "type": "git", "url": "https://github.com/bardapraiacaraiva/dario-orchestrator" },

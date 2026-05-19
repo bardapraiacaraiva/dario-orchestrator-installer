@@ -14,7 +14,13 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '11.1.1';
+const VERSION = '11.3.0';
+// v11.3.0 — DEMETER Squad (2026-05-19): 15 skills data engineering
+//   ETL, warehouse, BI, ML pipelines, A/B testing, cohort, predictive,
+//   streaming, catalog, DataOps, dbt, metrics layer, event tracking, storytelling
+//   Pricing tiers demeter_solo (R$ 297) / team (R$ 997) / enterprise (R$ 4K+)
+// v11.2.0 — LEX-BR Agent (2026-05-19): 15 skills legal Brasil
+//   OAB 205 + LGPD compliance, MCP JusBrasil/CNJ/STF, 15 áreas Direito BR
 // v11.1.1 — License Enforcement Hardening (2026-05-19)
 //   Closes trial leak: middleware FastAPI + enforce_or_exit em 19 CLIs.
 //   Adds license_guard.py. Trial expirado bloqueia runtime+CLIs (era 4/37 endpoints).
@@ -162,6 +168,27 @@ const BUILDER_SKILLS = [
 ];
 
 // ═══════════════════════════════════════════════════════════════
+// LEX-BR SKILLS (v11.2.0 — legal agent Brasil)
+// ═══════════════════════════════════════════════════════════════
+const LEX_SKILLS = [
+  'lex-civil', 'lex-commercial', 'lex-corporate', 'lex-trabalhista',
+  'lex-tributario', 'lex-lgpd', 'lex-regulatorio', 'lex-ai-governance',
+  'lex-ip', 'lex-litigation', 'lex-consumidor', 'lex-administrativo',
+  'lex-imobiliario', 'lex-familia', 'lex-criminal',
+];
+
+// ═══════════════════════════════════════════════════════════════
+// DEMETER SKILLS (v11.3.0 — data engineering & analytics)
+// ═══════════════════════════════════════════════════════════════
+const DEMETER_SKILLS = [
+  'demeter-etl', 'demeter-warehouse', 'demeter-bi-dashboard',
+  'demeter-data-quality', 'demeter-ml-pipelines', 'demeter-ab-testing',
+  'demeter-cohort-analysis', 'demeter-predictive', 'demeter-realtime-streaming',
+  'demeter-data-catalog', 'demeter-dataops', 'demeter-dbt-workflows',
+  'demeter-metrics-layer', 'demeter-event-tracking', 'demeter-data-storytelling',
+];
+
+// ═══════════════════════════════════════════════════════════════
 // CONFIGS + DATA
 // ═══════════════════════════════════════════════════════════════
 const CONFIGS = [
@@ -229,6 +256,24 @@ async function install(upgrade = false) {
     )) installed++;
   }
 
+  // LEX-BR Skills (legal Brasil)
+  console.log(`\n${c.bold}Step 6a: LEX-BR Skills (${LEX_SKILLS.length}) — Legal Brasil${c.reset}`);
+  for (const skill of LEX_SKILLS) {
+    if (await downloadFile(
+      `${REPO_RAW}/skills/${skill}/SKILL.md`,
+      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+    )) installed++;
+  }
+
+  // DEMETER Skills (data engineering)
+  console.log(`\n${c.bold}Step 6b: DEMETER Skills (${DEMETER_SKILLS.length}) — Data Engineering & Analytics${c.reset}`);
+  for (const skill of DEMETER_SKILLS) {
+    if (await downloadFile(
+      `${REPO_RAW}/skills/${skill}/SKILL.md`,
+      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+    )) installed++;
+  }
+
   // Python deps
   console.log(`\n${c.bold}Step 7: Python Dependencies${c.reset}`);
   let pythonCmd = null;
@@ -258,7 +303,7 @@ async function install(upgrade = false) {
   console.log(`  Version:        ${c.green}${c.bold}v${VERSION}${c.reset}`);
   console.log(`  Components:     ${c.bold}${installed}${c.reset} installed/updated`);
   console.log(`  Engines:        ${CORE_ENGINES.length} Python modules`);
-  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length} (${BUILDER_SKILLS.length} builder)`);
+  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length} (${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER)`);
   console.log(`  Configs:        ${CONFIGS.length + DATA_FILES.length} YAML files`);
   console.log(`  Path:           ${ORCH_DIR}`);
   console.log('');
