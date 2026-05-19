@@ -14,10 +14,13 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '11.1.0';
+const VERSION = '11.1.1';
+// v11.1.1 — License Enforcement Hardening (2026-05-19)
+//   Closes trial leak: middleware FastAPI + enforce_or_exit em 19 CLIs.
+//   Adds license_guard.py. Trial expirado bloqueia runtime+CLIs (era 4/37 endpoints).
 // v11.1.0 — Cognitive Audit (2026-05-19): 18 new modules
 //   Sprints 1-4 cognitive (10) + U11-U18 operational (8) = 216 tests passing
-//   See: dario-orchestrator/COGNITIVE-AUDIT.md
+//   See: dario-orchestrator/COGNITIVE-AUDIT-v11.1.md
 const REPO_RAW = 'https://raw.githubusercontent.com/bardapraiacaraiva/dario-orchestrator/master';
 
 const isWindows = os.platform() === 'win32';
@@ -130,6 +133,8 @@ const CORE_ENGINES = [
   'prompt_hints.py',          // U17: auto prompt hints from drilldowns
   'weekly_summary.py',        // U18: cron weekly Obsidian report
   'obsidian_safe_write.py',   // Utility: prevents Obsidian shadow files
+  // ─── v11.1.1 License Enforcement Hardening (2026-05-19) ───────────────
+  'license_guard.py',         // Centralized enforcement: middleware + decorator + CLI guard
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -296,6 +301,7 @@ function verify() {
   chk(path.join(ORCH_DIR, 'cognitive_dashboard.py'), 'U13: Cognitive Dashboard HTML');
   chk(path.join(ORCH_DIR, 'webhook_dispatcher.py'), 'U15: Webhook Dispatcher');
   chk(path.join(ORCH_DIR, 'weekly_summary.py'),    'U18: Weekly Summary');
+  chk(path.join(ORCH_DIR, 'license_guard.py'),     'v11.1.1: License Guard (closes trial leak)');
 
   console.log(`\n  ${c.bold}Score: ${pass}/${total}${c.reset}`);
   if (pass === total) console.log(`  ${c.green}${c.bold}V DARIO v${VERSION} — FULLY OPERATIONAL${c.reset}`);
