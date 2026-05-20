@@ -14,7 +14,7 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '11.3.0';
+const VERSION = '11.4.0';
 // v11.3.0 — DEMETER Squad (2026-05-19): 15 skills data engineering
 //   ETL, warehouse, BI, ML pipelines, A/B testing, cohort, predictive,
 //   streaming, catalog, DataOps, dbt, metrics layer, event tracking, storytelling
@@ -189,6 +189,67 @@ const DEMETER_SKILLS = [
 ];
 
 // ═══════════════════════════════════════════════════════════════
+// v11.4.0 SQUADS — 6 new domains, 93 skills
+// ═══════════════════════════════════════════════════════════════
+const ORION_SKILLS = [
+  'orion-product-strategy', 'orion-product-discovery', 'orion-prd-writing',
+  'orion-user-research', 'orion-jobs-to-be-done', 'orion-product-analytics',
+  'orion-roadmap-planning', 'orion-prioritization', 'orion-feature-flags',
+  'orion-beta-program', 'orion-product-launch', 'orion-growth-product',
+  'orion-retention-engineering', 'orion-pricing-strategy', 'orion-product-ops',
+];
+
+const OBSIDIAN_SKILLS = [
+  'obsidian-knowledge-graph', 'obsidian-second-brain', 'obsidian-atomic-notes',
+  'obsidian-moc-design', 'obsidian-para-organization', 'obsidian-zettelkasten-method',
+  'obsidian-rag-corpus-engineering', 'obsidian-taxonomy-design', 'obsidian-ontology-modeling',
+  'obsidian-search-relevance', 'obsidian-semantic-search', 'obsidian-embedding-models',
+  'obsidian-knowledge-base-curation', 'obsidian-cross-referencing', 'obsidian-knowledge-compaction',
+];
+
+const MEDIK_SKILLS = [
+  'medik-ans-compliance', 'medik-anvisa-regulatory', 'medik-cfm-resolutions',
+  'medik-lgpd-healthcare', 'medik-telemedicine', 'medik-clinical-protocols',
+  'medik-emr-integration', 'medik-medical-billing-tuss', 'medik-clinical-decision-support',
+  'medik-health-insurance-operations', 'medik-hospital-management', 'medik-primary-care',
+  'medik-mental-health-digital', 'medik-rcm-revenue-cycle', 'medik-claim-management',
+];
+
+const CAMPUS_SKILLS = [
+  'campus-mec-regulation', 'campus-ldb-compliance', 'campus-bncc-alignment',
+  'campus-enem-enade-prep', 'campus-ead-regulation', 'campus-instructional-design',
+  'campus-learning-experience', 'campus-education-analytics', 'campus-lms-architecture',
+  'campus-online-course-pedagogy', 'campus-gamification', 'campus-microlearning',
+  'campus-assessment-design', 'campus-certification', 'campus-corporate-learning',
+];
+
+const AEGIS_SKILLS = [
+  'aegis-threat-modeling', 'aegis-pentest-methodology', 'aegis-vulnerability-management',
+  'aegis-soc-operations', 'aegis-siem-integration', 'aegis-edr-management',
+  'aegis-zero-trust-architecture', 'aegis-iam-identity', 'aegis-secrets-management',
+  'aegis-incident-response', 'aegis-digital-forensics', 'aegis-compliance-frameworks',
+  'aegis-security-awareness', 'aegis-secure-sdlc', 'aegis-cloud-security',
+  'aegis-third-party-risk', 'aegis-supply-chain-security', 'aegis-breach-simulation',
+];
+
+const ZENITH_SKILLS = [
+  'zenith-strategic-planning', 'zenith-okr-design', 'zenith-board-pack-generation',
+  'zenith-ma-evaluation', 'zenith-scenario-planning', 'zenith-war-gaming',
+  'zenith-executive-dashboard', 'zenith-sensitivity-analysis', 'zenith-monte-carlo',
+  'zenith-decision-intelligence', 'zenith-risk-assessment', 'zenith-strategic-options',
+  'zenith-competitive-intelligence', 'zenith-capital-allocation', 'zenith-succession-planning',
+];
+
+const V11_4_SQUADS = {
+  'ORION (Product Excellence)': ORION_SKILLS,
+  'OBSIDIAN-CORP (Knowledge Graph)': OBSIDIAN_SKILLS,
+  'MEDIK (Healthcare BR)': MEDIK_SKILLS,
+  'CAMPUS (Education BR)': CAMPUS_SKILLS,
+  'AEGIS (Cybersecurity)': AEGIS_SKILLS,
+  'ZENITH (Executive Decision)': ZENITH_SKILLS,
+};
+
+// ═══════════════════════════════════════════════════════════════
 // CONFIGS + DATA
 // ═══════════════════════════════════════════════════════════════
 const CONFIGS = [
@@ -274,6 +335,19 @@ async function install(upgrade = false) {
     )) installed++;
   }
 
+  // v11.4.0 — 6 new squads (ORION, OBSIDIAN, MEDIK, CAMPUS, AEGIS, ZENITH)
+  let stepNum = 'c';
+  for (const [squadName, skills] of Object.entries(V11_4_SQUADS)) {
+    console.log(`\n${c.bold}Step 6${stepNum}: ${squadName} (${skills.length} skills)${c.reset}`);
+    for (const skill of skills) {
+      if (await downloadFile(
+        `${REPO_RAW}/skills/${skill}/SKILL.md`,
+        path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+      )) installed++;
+    }
+    stepNum = String.fromCharCode(stepNum.charCodeAt(0) + 1);
+  }
+
   // Python deps
   console.log(`\n${c.bold}Step 7: Python Dependencies${c.reset}`);
   let pythonCmd = null;
@@ -303,7 +377,9 @@ async function install(upgrade = false) {
   console.log(`  Version:        ${c.green}${c.bold}v${VERSION}${c.reset}`);
   console.log(`  Components:     ${c.bold}${installed}${c.reset} installed/updated`);
   console.log(`  Engines:        ${CORE_ENGINES.length} Python modules`);
-  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length} (${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER)`);
+  const V11_4_TOTAL = Object.values(V11_4_SQUADS).reduce((s, sk) => s + sk.length, 0);
+  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length + V11_4_TOTAL}`);
+  console.log(`                  ${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER + ${V11_4_TOTAL} v11.4 (6 squads)`);
   console.log(`  Configs:        ${CONFIGS.length + DATA_FILES.length} YAML files`);
   console.log(`  Path:           ${ORCH_DIR}`);
   console.log('');
