@@ -1,8 +1,8 @@
 {
   "name": "@dario-ai/orchestrator",
-  "version": "11.5.0",
-  "description": "DARIO Orchestrator v11.5.0 — AI Enterprise OS. 25 squads / 431+ skills. Includes GAIA (ESG/CSRD), NOMOS (Compliance PT — AI Act/DORA/CMVM/BdP), ORION (product), OBSIDIAN-CORP (knowledge), MEDIK (saúde BR), CAMPUS (educação BR), AEGIS (cybersec 18 skills), ZENITH (executive), LEX-BR (legal), DEMETER (data eng). One command install.",
-  "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "esg", "csrd", "ai-act", "dora", "compliance-pt", "compliance-br", "lex-br", "demeter", "orion", "obsidian-corp", "medik", "campus", "aegis", "zenith", "gaia", "nomos", "cybersecurity", "healthcare-br", "education-br", "portugal", "brasil"],
+  "version": "12.0.0",
+  "description": "DARIO Orchestrator v12.0.0 — AI Enterprise OS. 32 squads / 536+ skills. Tudo: GAIA ESG, NOMOS PT, MERCURIUS sales, ATLAS-FIN fintech, HELIOS energy, KIRION real estate, SPHINX cyber TIER-1, EUTERPE marketing, ORACULO AI research + ORION+OBSIDIAN+MEDIK+CAMPUS+AEGIS+ZENITH+LEX-BR+DEMETER. One command install.",
+  "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "esg", "csrd", "ai-act", "dora", "compliance-pt", "compliance-br", "fintech", "energy", "real-estate", "cybersecurity", "marketing", "ai-research", "sales", "lex-br", "demeter", "orion", "obsidian-corp", "medik", "campus", "aegis", "zenith", "gaia", "nomos", "mercurius", "atlas-fin", "helios", "kirion", "sphinx", "euterpe", "oraculo", "portugal", "brasil"],
   "author": "Barda <barda@automationsolutionai.com>",
   "license": "SEE LICENSE IN LICENSE",
   "repository": { "type": "git", "url": "https://github.com/bardapraiacaraiva/dario-orchestrator" },
