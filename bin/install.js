@@ -14,7 +14,7 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
-const VERSION = '11.4.0';
+const VERSION = '11.5.0';
 // v11.3.0 — DEMETER Squad (2026-05-19): 15 skills data engineering
 //   ETL, warehouse, BI, ML pipelines, A/B testing, cohort, predictive,
 //   streaming, catalog, DataOps, dbt, metrics layer, event tracking, storytelling
@@ -250,6 +250,30 @@ const V11_4_SQUADS = {
 };
 
 // ═══════════════════════════════════════════════════════════════
+// v11.5.0 SQUADS — GAIA (ESG) + NOMOS (Compliance PT)
+// ═══════════════════════════════════════════════════════════════
+const GAIA_SKILLS = [
+  'gaia-carbon-accounting', 'gaia-csrd-reporting', 'gaia-esg-rating',
+  'gaia-sustainability-strategy', 'gaia-supply-chain-esg', 'gaia-social-impact',
+  'gaia-governance-frameworks', 'gaia-sbti-targets', 'gaia-climate-risk-tcfd',
+  'gaia-ungc-reporting', 'gaia-sasb-standards', 'gaia-gri-reporting',
+  'gaia-b-corp-certification', 'gaia-esg-due-diligence', 'gaia-transition-planning',
+];
+
+const NOMOS_SKILLS = [
+  'nomos-cmvm-compliance', 'nomos-bdp-banking-pt', 'nomos-asae-food-safety',
+  'nomos-acss-healthcare-pt', 'nomos-rgpd-pt-marker', 'nomos-igac-events-pt',
+  'nomos-anac-aviation-pt', 'nomos-concorrencia-pt', 'nomos-eu-ai-act-pt',
+  'nomos-dora-resilience', 'nomos-mifid-ii-pt', 'nomos-psd2-open-banking-pt',
+  'nomos-anti-fraude-pt', 'nomos-kyc-aml-pt', 'nomos-dl-79-2024-digital',
+];
+
+const V11_5_SQUADS = {
+  'GAIA (Sustainability & ESG)': GAIA_SKILLS,
+  'NOMOS (Compliance PT)': NOMOS_SKILLS,
+};
+
+// ═══════════════════════════════════════════════════════════════
 // CONFIGS + DATA
 // ═══════════════════════════════════════════════════════════════
 const CONFIGS = [
@@ -348,6 +372,18 @@ async function install(upgrade = false) {
     stepNum = String.fromCharCode(stepNum.charCodeAt(0) + 1);
   }
 
+  // v11.5.0 — 2 new squads (GAIA + NOMOS)
+  for (const [squadName, skills] of Object.entries(V11_5_SQUADS)) {
+    console.log(`\n${c.bold}Step 6${stepNum}: ${squadName} (${skills.length} skills)${c.reset}`);
+    for (const skill of skills) {
+      if (await downloadFile(
+        `${REPO_RAW}/skills/${skill}/SKILL.md`,
+        path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
+      )) installed++;
+    }
+    stepNum = String.fromCharCode(stepNum.charCodeAt(0) + 1);
+  }
+
   // Python deps
   console.log(`\n${c.bold}Step 7: Python Dependencies${c.reset}`);
   let pythonCmd = null;
@@ -378,8 +414,9 @@ async function install(upgrade = false) {
   console.log(`  Components:     ${c.bold}${installed}${c.reset} installed/updated`);
   console.log(`  Engines:        ${CORE_ENGINES.length} Python modules`);
   const V11_4_TOTAL = Object.values(V11_4_SQUADS).reduce((s, sk) => s + sk.length, 0);
-  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length + V11_4_TOTAL}`);
-  console.log(`                  ${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER + ${V11_4_TOTAL} v11.4 (6 squads)`);
+  const V11_5_TOTAL = Object.values(V11_5_SQUADS).reduce((s, sk) => s + sk.length, 0);
+  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length + V11_4_TOTAL + V11_5_TOTAL}`);
+  console.log(`                  ${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER + ${V11_4_TOTAL} v11.4 + ${V11_5_TOTAL} v11.5 (GAIA+NOMOS)`);
   console.log(`  Configs:        ${CONFIGS.length + DATA_FILES.length} YAML files`);
   console.log(`  Path:           ${ORCH_DIR}`);
   console.log('');
