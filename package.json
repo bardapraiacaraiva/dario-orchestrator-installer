@@ -1,13 +1,37 @@
 {
-  "name": "@dario-ai/orchestrator",
-  "version": "12.0.0",
-  "description": "DARIO Orchestrator v12.0.0 — AI Enterprise OS. 32 squads / 536+ skills. Tudo: GAIA ESG, NOMOS PT, MERCURIUS sales, ATLAS-FIN fintech, HELIOS energy, KIRION real estate, SPHINX cyber TIER-1, EUTERPE marketing, ORACULO AI research + ORION+OBSIDIAN+MEDIK+CAMPUS+AEGIS+ZENITH+LEX-BR+DEMETER. One command install.",
-  "keywords": ["claude-code", "orchestrator", "ai-agents", "enterprise", "esg", "csrd", "ai-act", "dora", "compliance-pt", "compliance-br", "fintech", "energy", "real-estate", "cybersecurity", "marketing", "ai-research", "sales", "lex-br", "demeter", "orion", "obsidian-corp", "medik", "campus", "aegis", "zenith", "gaia", "nomos", "mercurius", "atlas-fin", "helios", "kirion", "sphinx", "euterpe", "oraculo", "portugal", "brasil"],
+  "name": "@dario-ai/orchestrator-installer",
+  "version": "12.1.0",
+  "description": "One-line installer + upgrader for the DARIO Orchestrator (32 squads, 559+ skills, 59 license tiers). Clones the trial or VIP repo, runs upgrade script, activates license.",
+  "bin": {
+    "dario-installer": "./bin/install.js",
+    "dario-install": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node bin/install.js --help"
+  },
+  "keywords": [
+    "claude-code",
+    "orchestrator",
+    "ai-agents",
+    "installer",
+    "npx"
+  ],
   "author": "Barda <barda@automationsolutionai.com>",
   "license": "SEE LICENSE IN LICENSE",
-  "repository": { "type": "git", "url": "https://github.com/bardapraiacaraiva/dario-orchestrator" },
-  "homepage": "http://31.97.53.231:8422",
-  "bin": { "dario-install": "./bin/install.js" },
-  "files": ["bin/", "README.md"],
-  "engines": { "node": ">=18.0.0" }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bardapraiacaraiva/dario-orchestrator-installer.git"
+  },
+  "homepage": "https://github.com/bardapraiacaraiva/dario-orchestrator-installer#readme",
+  "bugs": {
+    "url": "https://github.com/bardapraiacaraiva/dario-orchestrator-installer/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

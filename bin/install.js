@@ -1,511 +1,369 @@
 #!/usr/bin/env node
 /**
- * DARIO Orchestrator v11.0 — Installer
+ * DARIO Orchestrator — Installer v12.1.0
  *
- * INSTALL:   npx github:bardapraiacaraiva/dario-orchestrator-installer
- * UPGRADE:   npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
- * CHECK:     npx github:bardapraiacaraiva/dario-orchestrator-installer --check
- * WHITE-LABEL: npx github:bardapraiacaraiva/dario-orchestrator-installer --company "Acme" --preset agency
+ *   npx github:bardapraiacaraiva/dario-orchestrator-installer
+ *   npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
+ *   npx github:bardapraiacaraiva/dario-orchestrator-installer --key DARIO-XXXX-XXXX-XXXX-PRO
+ *   npx github:bardapraiacaraiva/dario-orchestrator-installer --check
+ *
+ * Trial (public): clones dario-orchestrator (master) + starts 7-day trial.
+ * VIP (private):  needs --key and a GitHub token (env DARIO_GH_TOKEN
+ *                 or --token), clones dario-orchestrator-full + activates.
  */
 
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const https = require('https');
 
-const VERSION = '11.5.0';
-// v11.3.0 — DEMETER Squad (2026-05-19): 15 skills data engineering
-//   ETL, warehouse, BI, ML pipelines, A/B testing, cohort, predictive,
-//   streaming, catalog, DataOps, dbt, metrics layer, event tracking, storytelling
-//   Pricing tiers demeter_solo (R$ 297) / team (R$ 997) / enterprise (R$ 4K+)
-// v11.2.0 — LEX-BR Agent (2026-05-19): 15 skills legal Brasil
-//   OAB 205 + LGPD compliance, MCP JusBrasil/CNJ/STF, 15 áreas Direito BR
-// v11.1.1 — License Enforcement Hardening (2026-05-19)
-//   Closes trial leak: middleware FastAPI + enforce_or_exit em 19 CLIs.
-//   Adds license_guard.py. Trial expirado bloqueia runtime+CLIs (era 4/37 endpoints).
-// v11.1.0 — Cognitive Audit (2026-05-19): 18 new modules
-//   Sprints 1-4 cognitive (10) + U11-U18 operational (8) = 216 tests passing
-//   See: dario-orchestrator/COGNITIVE-AUDIT-v11.1.md
-const REPO_RAW = 'https://raw.githubusercontent.com/bardapraiacaraiva/dario-orchestrator/master';
-
-const isWindows = os.platform() === 'win32';
+const VERSION = '12.1.0';
 const HOME = os.homedir();
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
 const SKILLS_DIR = path.join(HOME, '.claude', 'skills');
 
+const REPO_TRIAL = 'https://github.com/bardapraiacaraiva/dario-orchestrator.git';
+const REPO_VIP   = 'https://github.com/bardapraiacaraiva/dario-orchestrator-full.git';
+
+// ANSI colors
 const c = {
-  reset: '\x1b[0m', bold: '\x1b[1m',
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
   red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-  blue: '\x1b[34m', cyan: '\x1b[36m', magenta: '\x1b[35m',
+  blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m',
 };
 
-function log(msg) { console.log(`${c.green}[DARIO]${c.reset} ${msg}`); }
-function warn(msg) { console.log(`${c.yellow}[WARN]${c.reset} ${msg}`); }
-function err(msg) { console.error(`${c.red}[ERROR]${c.reset} ${msg}`); process.exit(1); }
-function skip(msg) { console.log(`${c.blue}[SKIP]${c.reset} ${msg} (exists)`); }
+const log = (m) => console.log(`${c.green}[DARIO]${c.reset} ${m}`);
+const warn = (m) => console.log(`${c.yellow}[WARN]${c.reset}  ${m}`);
+const die = (m) => { console.error(`${c.red}[ERROR]${c.reset} ${m}`); process.exit(1); };
+const step = (n, m) => console.log(`\n${c.bold}${c.cyan}── Step ${n}: ${m}${c.reset}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Args
+// ─────────────────────────────────────────────────────────────────────────────
+function parseArgs(argv) {
+  const a = { mode: 'install', key: null, token: null, dryRun: false, force: false };
+  for (let i = 0; i < argv.length; i++) {
+    const v = argv[i];
+    if (v === '--upgrade') a.mode = 'upgrade';
+    else if (v === '--check') a.mode = 'check';
+    else if (v === '--help' || v === '-h') a.mode = 'help';
+    else if (v === '--version' || v === '-v') a.mode = 'version';
+    else if (v === '--dry-run') a.dryRun = true;
+    else if (v === '--force') a.force = true;
+    else if (v === '--key') a.key = argv[++i];
+    else if (v === '--token') a.token = argv[++i];
+    else if (v.startsWith('--key=')) a.key = v.slice(6);
+    else if (v.startsWith('--token=')) a.token = v.slice(8);
+  }
+  if (!a.token && process.env.DARIO_GH_TOKEN) a.token = process.env.DARIO_GH_TOKEN;
+  return a;
+}
 
 function banner(mode) {
-  const label = mode === 'upgrade' ? `UPGRADE → v${VERSION}` : mode === 'check' ? 'VERIFICATION' : `INSTALL v${VERSION}`;
+  const title =
+    mode === 'upgrade' ? `UPGRADE → v${VERSION}` :
+    mode === 'check'   ? 'CHECK INSTALLATION'    :
+    mode === 'help'    ? 'HELP'                  :
+                         `INSTALL v${VERSION}`;
   console.log(`
-${c.cyan}${c.bold}╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║   ██████╗  █████╗ ██████╗ ██╗ ██████╗                   ║
-║   ██╔══██╗██╔══██╗██╔══██╗██║██╔═══██╗                  ║
-║   ██║  ██║███████║██████╔╝██║██║   ██║                  ║
-║   ██║  ██║██╔══██║██╔══██╗██║██║   ██║                  ║
-║   ██████╔╝██║  ██║██║  ██║██║╚██████╔╝                  ║
-║   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝ ╚═════╝                  ║
-║                                                          ║
-║   AI Enterprise OS v${VERSION}                              ║
-║   269 skills | 17 domains | 66 engines                   ║
-║   ${label.padEnd(42)}         ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝${c.reset}
+${c.bold}${c.cyan}╔══════════════════════════════════════════════════════════════════╗
+║  DARIO ORCHESTRATOR — ${title.padEnd(43)}║
+║  32 squads · 559+ skills · 59 license tiers · v${VERSION.padEnd(18)}║
+╚══════════════════════════════════════════════════════════════════╝${c.reset}
 `);
 }
 
-function download(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        return download(res.headers.location).then(resolve).catch(reject);
+function help() {
+  console.log(`
+${c.bold}USAGE${c.reset}
+  npx github:bardapraiacaraiva/dario-orchestrator-installer [options]
+
+${c.bold}MODES${c.reset}
+  (default)            Install trial (public repo + 7-day trial)
+  --upgrade            Pull latest + run upgrade script (idempotent)
+  --check              Verify install + license status
+  --help               This message
+  --version            Print installer version
+
+${c.bold}LICENSE${c.reset}
+  --key DARIO-XXXX-XXXX-XXXX-SUF
+                       Activate a license key after install.
+                       Tier inferred from suffix (PRO/ENT/ELG/EFL/...).
+                       VIP keys (anything other than PRO basic trial)
+                       additionally trigger the VIP repo clone — for
+                       that you also need:
+
+  --token GHP_xxx      GitHub Personal Access Token with read access
+                       to dario-orchestrator-full (private).
+                       Or set env: DARIO_GH_TOKEN=ghp_xxx
+
+${c.bold}OPTIONS${c.reset}
+  --dry-run            Show what would happen without doing it
+  --force              Re-clone even if ~/.claude/orchestrator exists
+
+${c.bold}EXAMPLES${c.reset}
+  # Trial install (free, public)
+  npx github:bardapraiacaraiva/dario-orchestrator-installer
+
+  # Upgrade existing install
+  npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
+
+  # VIP install with PRO key
+  DARIO_GH_TOKEN=ghp_xxx npx github:bardapraiacaraiva/dario-orchestrator-installer \\
+      --key DARIO-A7B7-6AE8-75EB-PRO
+
+  # Verify existing install
+  npx github:bardapraiacaraiva/dario-orchestrator-installer --check
+`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prereqs
+// ─────────────────────────────────────────────────────────────────────────────
+function which(cmd) {
+  try {
+    const r = spawnSync(os.platform() === 'win32' ? 'where' : 'which', [cmd],
+      { encoding: 'utf8' });
+    return r.status === 0 ? (r.stdout.split('\n')[0] || '').trim() : null;
+  } catch { return null; }
+}
+
+function detectPython() {
+  for (const cmd of ['python3', 'python', 'py']) {
+    try {
+      const r = spawnSync(cmd, ['--version'], { encoding: 'utf8' });
+      if (r.status === 0) {
+        const ver = (r.stdout + r.stderr).match(/(\d+)\.(\d+)/);
+        if (ver && (+ver[1] > 3 || (+ver[1] === 3 && +ver[2] >= 11))) {
+          return { cmd, version: ver[0] };
+        }
       }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-    }).on('error', reject);
-  });
+    } catch {}
+  }
+  return null;
 }
 
-function mkdirp(dir) { fs.mkdirSync(dir, { recursive: true }); }
-function fileExists(p) { return fs.existsSync(p); }
+function checkPrereqs() {
+  step(1, 'Prerequisites');
+  const node = process.version;
+  const major = parseInt(node.slice(1).split('.')[0], 10);
+  if (major < 18) die(`Node ${node} — need >= 18.0.0`);
+  log(`Node ${node}`);
 
-async function downloadFile(url, dest, label, force = false) {
-  if (!force && fileExists(dest)) { skip(label); return false; }
+  if (!which('git')) die('git not found in PATH. Install: https://git-scm.com');
+  log(`git ${execSync('git --version').toString().trim()}`);
+
+  const py = detectPython();
+  if (!py) warn('Python 3.11+ not detected — runtime/license_manager will need it');
+  else log(`Python ${py.version} (${py.cmd})`);
+
+  return { python: py };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Key → tier mapping
+// ─────────────────────────────────────────────────────────────────────────────
+function parseKey(key) {
+  if (!key) return null;
+  // DARIO-XXXX-XXXX-XXXX-SUFFIX where SUFFIX is 2-4 chars
+  const m = key.match(/^DARIO-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-([A-Z_]+)$/i);
+  if (!m) return null;
+  const suffix = m[1].toUpperCase();
+  return { suffix, key };
+}
+
+function isVipKey(parsed) {
+  // Any valid key triggers VIP repo. Trial users don't need a key —
+  // they just run without --key and start the 7-day trial.
+  return !!parsed;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clone / pull
+// ─────────────────────────────────────────────────────────────────────────────
+function ensureParentDir(dir) {
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+}
+
+function gitClone(url, dest, dry) {
+  ensureParentDir(dest);
+  if (dry) { console.log(`  [dry-run] git clone ${url} ${dest}`); return; }
+  execSync(`git clone --depth 1 "${url}" "${dest}"`, { stdio: 'inherit' });
+}
+
+function gitPull(dest, dry) {
+  if (dry) { console.log(`  [dry-run] git -C ${dest} pull --ff-only`); return; }
+  execSync(`git -C "${dest}" pull --ff-only`, { stdio: 'inherit' });
+}
+
+function repoUrlWithToken(url, token) {
+  if (!token) return url;
+  return url.replace('https://', `https://${token}@`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// License + upgrade scripts
+// ─────────────────────────────────────────────────────────────────────────────
+function runUpgradeScript(py, dry) {
+  const script = path.join(ORCH_DIR, 'scripts', 'upgrade_v12_1.py');
+  if (!fs.existsSync(script)) {
+    warn(`upgrade script not found at ${script} — skipping post-install setup`);
+    return;
+  }
+  if (dry) { console.log(`  [dry-run] ${py.cmd} ${script}`); return; }
   try {
-    if (force && fileExists(dest)) {
-      fs.copyFileSync(dest, dest + `.bak-${new Date().toISOString().split('T')[0]}`);
-    }
-    const content = await download(url);
-    mkdirp(path.dirname(dest));
-    fs.writeFileSync(dest, content, 'utf-8');
-    log(`${force ? 'Updated' : 'Installed'}: ${label}`);
-    return true;
+    execSync(`${py.cmd} "${script}"`, { stdio: 'inherit', cwd: ORCH_DIR });
   } catch (e) {
-    warn(`Failed: ${label} (${e.message})`);
-    return false;
+    warn(`upgrade script returned non-zero; check output above`);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CORE ENGINES (66 Python files)
-// ═══════════════════════════════════════════════════════════════
-const CORE_ENGINES = [
-  'runtime.py', 'db.py', 'session_boot.py',
-  'executor.py', 'api_executor.py', 'dispatch_engine.py', 'chain_executor.py',
-  'hierarchical_process.py', 'workflow_graph.py', 'filter_pipeline.py', 'reactive_subscriptions.py',
-  'evolution_runner.py', 'adaptive_rubric.py', 'context_injector.py', 'memory_blocks.py',
-  'model_router.py', 'predictor.py', 'llm_judge.py', 'llm_evaluators.py', 'composite_memory_scoring.py',
-  'quality_scorer.py', 'eval_suite.py', 'artifact_schemas.py', 'output_guardrails.py', 'guardrails.py',
-  'state_machine.py', 'autodiag_runner.py', 'termination.py', 'checkpoint_interrupt.py',
-  'error_handlers.py', 'replanner.py', 'suspend_resume.py',
-  'span_tracer.py', 'tracer.py', 'audit_logger.py', 'sse_streaming.py', 'lifecycle_hooks.py',
-  'auth.py', 'approval_gates.py', 'filelock.py', 'license_manager.py',
-  'budget_tracker.py', 'token_meter.py', 'financial_dashboard.py', 'tax_calendar.py', 'pt_validators.py',
-  'bank_parser.py', 'saft_parser.py',
-  'core_upgrades.py', 'execution_upgrades.py', 'intelligence_upgrades.py',
-  'quality_upgrades.py', 'state_upgrades.py', 'observability_upgrades.py',
-  'security_upgrades.py', 'financial_upgrades.py',
-  'task_store.py', 'task_spec.py', 'task_templates.py', 'skill_store.py',
-  'tier3.py', 'process_manager.py', 'generate_dashboard.py',
-  // ─── v11.1.0 Cognitive Audit (2026-05-19) ─────────────────────────────
-  // Sprints 1-4 cognitive layer (10 modules) + U11-U18 operational (8 modules)
-  'semantic_dispatch.py',     // U1: embedding-based skill routing
-  'ethical_gate.py',          // U2: pre-dispatch triade decisoria (Check 0)
-  'synaptic_update.py',       // U3: synaptic weights write-back runtime
-  'confidence_engine.py',     // U4: 5-way action gating (HIGH/MED/LOW)
-  'qvalue_memory_wire.py',    // U5: Q-value memory wired with SQLite
-  'chain_validator.py',       // U6: pass_to_next field validation
-  'golden_eval.py',           // U7: regression detection with goldens
-  'episode_promoter.py',      // U8: episodes -> semantic + auto-rules
-  'dispatch_cot.py',          // U9: Chain-of-Thought pre-dispatch + postmortem
-  'dynamic_branch.py',        // U10: runtime chain branching
-  'cron_daily.py',            // U12: daily background maintenance
-  'cognitive_dashboard.py',   // U13: HTML dashboard generator (8 cards)
-  'webhook_dispatcher.py',    // U15: Slack/Discord/generic alerts
-  'eval_drilldown.py',        // U16: token/section/paragraph diff + hints
-  'prompt_hints.py',          // U17: auto prompt hints from drilldowns
-  'weekly_summary.py',        // U18: cron weekly Obsidian report
-  'obsidian_safe_write.py',   // Utility: prevents Obsidian shadow files
-  // ─── v11.1.1 License Enforcement Hardening (2026-05-19) ───────────────
-  'license_guard.py',         // Centralized enforcement: middleware + decorator + CLI guard
-];
+function activateLicense(py, parsed, dry) {
+  const lm = path.join(ORCH_DIR, 'license_manager.py');
+  if (!fs.existsSync(lm)) { warn(`license_manager.py not found; skipping activation`); return; }
+  if (dry) { console.log(`  [dry-run] ${py.cmd} ${lm} --activate ${parsed.key}`); return; }
+  try {
+    execSync(`${py.cmd} "${lm}" --activate "${parsed.key}"`, { stdio: 'inherit', cwd: ORCH_DIR });
+  } catch (e) {
+    warn(`activation failed — run manually: python license_manager.py --activate ${parsed.key}`);
+  }
+}
 
-// ═══════════════════════════════════════════════════════════════
-// SKILLS (269 total — organized by domain)
-// ═══════════════════════════════════════════════════════════════
-const CORE_SKILLS = [
-  'dario-orchestrator', 'dario-dispatch', 'dario-taskboard', 'dario-status', 'dario-evolve',
-  'dario-diagnose', 'dario-brand', 'dario-offer', 'dario-naming', 'dario-pitch',
-  'dario-proposal', 'dario-content', 'dario-social', 'dario-email-seq',
-  'dario-cfo', 'cfo-agency-pnl', 'cfo-token-roi', 'cfo-tax-autopilot',
-  'lucas-heartbeat', 'lucas-quality', 'lucas-autopilot', 'lucas-analytics', 'lucas-finance',
-  'seo-audit', 'seo-technical', 'seo-content', 'seo-local', 'seo-schema', 'seo-plan',
-];
+function initTrial(py, dry) {
+  const lm = path.join(ORCH_DIR, 'license_manager.py');
+  if (!fs.existsSync(lm)) { warn(`license_manager.py not found; skipping trial init`); return; }
+  if (dry) { console.log(`  [dry-run] ${py.cmd} ${lm} --init-trial`); return; }
+  try {
+    execSync(`${py.cmd} "${lm}" --init-trial`, { stdio: 'inherit', cwd: ORCH_DIR });
+  } catch (e) {
+    warn(`trial init returned non-zero — may already be initialised`);
+  }
+}
 
-const BUILDER_SKILLS = [
-  'builder-design-system', 'builder-landing-page', 'builder-nextjs-app', 'builder-vercel-deploy',
-  'builder-api-design', 'builder-database-schema', 'builder-auth-system', 'builder-react-components',
-  'builder-docker-compose', 'builder-ci-cd', 'builder-brand-identity', 'builder-wireframe',
-  'builder-analytics-setup', 'builder-data-model', 'builder-prd-complete', 'builder-mvp-scope',
-  'builder-tech-stack', 'builder-architecture-doc', 'builder-launch-checklist', 'builder-form-system',
-  'builder-visual-to-code', 'builder-accessibility-check', 'builder-coolify-deploy',
-  'builder-nextjs-monorepo', 'builder-svg-icons', 'builder-animated-ui',
-  'builder-drizzle-schema', 'builder-orpc-api', 'builder-smart-context',
-  'builder-sst-deploy', 'builder-component-registry', 'builder-component-docs',
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Main flows
+// ─────────────────────────────────────────────────────────────────────────────
+function doInstall(args) {
+  const { python } = checkPrereqs();
 
-// ═══════════════════════════════════════════════════════════════
-// LEX-BR SKILLS (v11.2.0 — legal agent Brasil)
-// ═══════════════════════════════════════════════════════════════
-const LEX_SKILLS = [
-  'lex-civil', 'lex-commercial', 'lex-corporate', 'lex-trabalhista',
-  'lex-tributario', 'lex-lgpd', 'lex-regulatorio', 'lex-ai-governance',
-  'lex-ip', 'lex-litigation', 'lex-consumidor', 'lex-administrativo',
-  'lex-imobiliario', 'lex-familia', 'lex-criminal',
-];
+  const parsed = parseKey(args.key);
+  const vip = isVipKey(parsed);
+  if (args.key && !parsed) die(`Invalid key format: ${args.key} (expected DARIO-XXXX-XXXX-XXXX-SUF)`);
+  if (vip && !args.token)
+    die(`VIP key requires --token (or env DARIO_GH_TOKEN) for the private VIP repo.\n` +
+        `  Contact barda@automationsolutionai.com if you don't have one.`);
 
-// ═══════════════════════════════════════════════════════════════
-// DEMETER SKILLS (v11.3.0 — data engineering & analytics)
-// ═══════════════════════════════════════════════════════════════
-const DEMETER_SKILLS = [
-  'demeter-etl', 'demeter-warehouse', 'demeter-bi-dashboard',
-  'demeter-data-quality', 'demeter-ml-pipelines', 'demeter-ab-testing',
-  'demeter-cohort-analysis', 'demeter-predictive', 'demeter-realtime-streaming',
-  'demeter-data-catalog', 'demeter-dataops', 'demeter-dbt-workflows',
-  'demeter-metrics-layer', 'demeter-event-tracking', 'demeter-data-storytelling',
-];
+  step(2, vip ? 'Clone VIP repo (dario-orchestrator-full)' : 'Clone trial repo (dario-orchestrator)');
+  if (fs.existsSync(ORCH_DIR) && !args.force) {
+    die(`${ORCH_DIR} already exists. Use --upgrade to update, or --force to re-clone.`);
+  }
+  if (fs.existsSync(ORCH_DIR) && args.force) {
+    log(`--force given; removing ${ORCH_DIR}`);
+    if (!args.dryRun) fs.rmSync(ORCH_DIR, { recursive: true, force: true });
+  }
+  const url = vip ? repoUrlWithToken(REPO_VIP, args.token) : REPO_TRIAL;
+  gitClone(url, ORCH_DIR, args.dryRun);
 
-// ═══════════════════════════════════════════════════════════════
-// v11.4.0 SQUADS — 6 new domains, 93 skills
-// ═══════════════════════════════════════════════════════════════
-const ORION_SKILLS = [
-  'orion-product-strategy', 'orion-product-discovery', 'orion-prd-writing',
-  'orion-user-research', 'orion-jobs-to-be-done', 'orion-product-analytics',
-  'orion-roadmap-planning', 'orion-prioritization', 'orion-feature-flags',
-  'orion-beta-program', 'orion-product-launch', 'orion-growth-product',
-  'orion-retention-engineering', 'orion-pricing-strategy', 'orion-product-ops',
-];
+  step(3, 'Post-install setup (upgrade_v12_1.py)');
+  if (python) runUpgradeScript(python, args.dryRun);
 
-const OBSIDIAN_SKILLS = [
-  'obsidian-knowledge-graph', 'obsidian-second-brain', 'obsidian-atomic-notes',
-  'obsidian-moc-design', 'obsidian-para-organization', 'obsidian-zettelkasten-method',
-  'obsidian-rag-corpus-engineering', 'obsidian-taxonomy-design', 'obsidian-ontology-modeling',
-  'obsidian-search-relevance', 'obsidian-semantic-search', 'obsidian-embedding-models',
-  'obsidian-knowledge-base-curation', 'obsidian-cross-referencing', 'obsidian-knowledge-compaction',
-];
+  step(4, parsed ? `Activate license (${parsed.suffix})` : 'Start 7-day trial');
+  if (python) {
+    if (parsed) activateLicense(python, parsed, args.dryRun);
+    else initTrial(python, args.dryRun);
+  }
 
-const MEDIK_SKILLS = [
-  'medik-ans-compliance', 'medik-anvisa-regulatory', 'medik-cfm-resolutions',
-  'medik-lgpd-healthcare', 'medik-telemedicine', 'medik-clinical-protocols',
-  'medik-emr-integration', 'medik-medical-billing-tuss', 'medik-clinical-decision-support',
-  'medik-health-insurance-operations', 'medik-hospital-management', 'medik-primary-care',
-  'medik-mental-health-digital', 'medik-rcm-revenue-cycle', 'medik-claim-management',
-];
+  printSummary(vip, parsed);
+}
 
-const CAMPUS_SKILLS = [
-  'campus-mec-regulation', 'campus-ldb-compliance', 'campus-bncc-alignment',
-  'campus-enem-enade-prep', 'campus-ead-regulation', 'campus-instructional-design',
-  'campus-learning-experience', 'campus-education-analytics', 'campus-lms-architecture',
-  'campus-online-course-pedagogy', 'campus-gamification', 'campus-microlearning',
-  'campus-assessment-design', 'campus-certification', 'campus-corporate-learning',
-];
+function doUpgrade(args) {
+  const { python } = checkPrereqs();
+  if (!fs.existsSync(path.join(ORCH_DIR, '.git'))) {
+    die(`No git repo at ${ORCH_DIR}. Run install first (no --upgrade).`);
+  }
+  step(2, 'git pull --ff-only');
+  gitPull(ORCH_DIR, args.dryRun);
 
-const AEGIS_SKILLS = [
-  'aegis-threat-modeling', 'aegis-pentest-methodology', 'aegis-vulnerability-management',
-  'aegis-soc-operations', 'aegis-siem-integration', 'aegis-edr-management',
-  'aegis-zero-trust-architecture', 'aegis-iam-identity', 'aegis-secrets-management',
-  'aegis-incident-response', 'aegis-digital-forensics', 'aegis-compliance-frameworks',
-  'aegis-security-awareness', 'aegis-secure-sdlc', 'aegis-cloud-security',
-  'aegis-third-party-risk', 'aegis-supply-chain-security', 'aegis-breach-simulation',
-];
+  step(3, 'Re-run upgrade_v12_1.py (idempotent)');
+  if (python) runUpgradeScript(python, args.dryRun);
 
-const ZENITH_SKILLS = [
-  'zenith-strategic-planning', 'zenith-okr-design', 'zenith-board-pack-generation',
-  'zenith-ma-evaluation', 'zenith-scenario-planning', 'zenith-war-gaming',
-  'zenith-executive-dashboard', 'zenith-sensitivity-analysis', 'zenith-monte-carlo',
-  'zenith-decision-intelligence', 'zenith-risk-assessment', 'zenith-strategic-options',
-  'zenith-competitive-intelligence', 'zenith-capital-allocation', 'zenith-succession-planning',
-];
+  step(4, 'Done');
+  log(`Orchestrator at ${ORCH_DIR} is up to date.`);
+}
 
-const V11_4_SQUADS = {
-  'ORION (Product Excellence)': ORION_SKILLS,
-  'OBSIDIAN-CORP (Knowledge Graph)': OBSIDIAN_SKILLS,
-  'MEDIK (Healthcare BR)': MEDIK_SKILLS,
-  'CAMPUS (Education BR)': CAMPUS_SKILLS,
-  'AEGIS (Cybersecurity)': AEGIS_SKILLS,
-  'ZENITH (Executive Decision)': ZENITH_SKILLS,
-};
-
-// ═══════════════════════════════════════════════════════════════
-// v11.5.0 SQUADS — GAIA (ESG) + NOMOS (Compliance PT)
-// ═══════════════════════════════════════════════════════════════
-const GAIA_SKILLS = [
-  'gaia-carbon-accounting', 'gaia-csrd-reporting', 'gaia-esg-rating',
-  'gaia-sustainability-strategy', 'gaia-supply-chain-esg', 'gaia-social-impact',
-  'gaia-governance-frameworks', 'gaia-sbti-targets', 'gaia-climate-risk-tcfd',
-  'gaia-ungc-reporting', 'gaia-sasb-standards', 'gaia-gri-reporting',
-  'gaia-b-corp-certification', 'gaia-esg-due-diligence', 'gaia-transition-planning',
-];
-
-const NOMOS_SKILLS = [
-  'nomos-cmvm-compliance', 'nomos-bdp-banking-pt', 'nomos-asae-food-safety',
-  'nomos-acss-healthcare-pt', 'nomos-rgpd-pt-marker', 'nomos-igac-events-pt',
-  'nomos-anac-aviation-pt', 'nomos-concorrencia-pt', 'nomos-eu-ai-act-pt',
-  'nomos-dora-resilience', 'nomos-mifid-ii-pt', 'nomos-psd2-open-banking-pt',
-  'nomos-anti-fraude-pt', 'nomos-kyc-aml-pt', 'nomos-dl-79-2024-digital',
-];
-
-const V11_5_SQUADS = {
-  'GAIA (Sustainability & ESG)': GAIA_SKILLS,
-  'NOMOS (Compliance PT)': NOMOS_SKILLS,
-};
-
-// ═══════════════════════════════════════════════════════════════
-// CONFIGS + DATA
-// ═══════════════════════════════════════════════════════════════
-const CONFIGS = [
-  'company.yaml', 'autodiag.yaml', 'composite_modes.yaml', 'evolution_engine.yaml',
-  'fallback_matrix.yaml', 'manifesto.yaml', 'operational_states.yaml',
-  'synaptic_weights.yaml', 'notifications.yaml', 'skill_chains.yaml',
-  'integration_registry.yaml',
-];
-
-const DATA_FILES = [
-  'finance/receivables.yaml', 'finance/freelancers.yaml', 'finance/tax_calendar.yaml',
-  'finance/model_pricing.yaml', 'finance/output_schemas.yaml',
-  'chains/client_onboarding.yaml', 'chains/idea_to_landing_page.yaml',
-];
-
-// ═══════════════════════════════════════════════════════════════
-// INSTALL
-// ═══════════════════════════════════════════════════════════════
-async function install(upgrade = false) {
-  let installed = 0;
-
-  // Directories
-  console.log(`\n${c.bold}Step 1: Directory Structure${c.reset}`);
-  const dirs = [
-    'tasks/active', 'tasks/done', 'tasks/templates',
-    'audit', 'budgets', 'quality', 'finance', 'chains', 'tests',
-    'evolution/journal', 'evolution/mutations', 'evolution/rules', 'evolution/checkpoints',
+function doCheck() {
+  console.log(`\n${c.bold}${c.cyan}── Install state${c.reset}`);
+  const checks = [
+    ['Orchestrator dir',  ORCH_DIR],
+    ['license_manager.py', path.join(ORCH_DIR, 'license_manager.py')],
+    ['runtime.py',         path.join(ORCH_DIR, 'runtime.py')],
+    ['scripts/upgrade_v12_1.py', path.join(ORCH_DIR, 'scripts', 'upgrade_v12_1.py')],
+    ['company.yaml',       path.join(ORCH_DIR, 'company.yaml')],
   ];
-  dirs.forEach(d => mkdirp(path.join(ORCH_DIR, d)));
-  log(`${dirs.length} directories verified`);
-
-  // Configs
-  console.log(`\n${c.bold}Step 2: Orchestrator Configs (${CONFIGS.length})${c.reset}`);
-  for (const cfg of CONFIGS) {
-    if (await downloadFile(`${REPO_RAW}/orchestrator/${cfg}`, path.join(ORCH_DIR, cfg), cfg, upgrade)) installed++;
+  let pass = 0;
+  for (const [label, p] of checks) {
+    if (fs.existsSync(p)) { log(`✓ ${label}`); pass++; }
+    else warn(`✗ ${label} (${p})`);
   }
+  console.log(`\n  ${c.bold}${pass}/${checks.length} checks passed${c.reset}`);
 
-  // Data files
-  console.log(`\n${c.bold}Step 3: Finance & Chains Data (${DATA_FILES.length})${c.reset}`);
-  for (const df of DATA_FILES) {
-    if (await downloadFile(`${REPO_RAW}/orchestrator/${df}`, path.join(ORCH_DIR, df), df)) installed++;
-  }
-
-  // Engines
-  console.log(`\n${c.bold}Step 4: Python Engines (${CORE_ENGINES.length})${c.reset}`);
-  for (const eng of CORE_ENGINES) {
-    if (await downloadFile(`${REPO_RAW}/orchestrator/${eng}`, path.join(ORCH_DIR, eng), eng, upgrade)) installed++;
-  }
-
-  // Core Skills
-  console.log(`\n${c.bold}Step 5: Core Skills (${CORE_SKILLS.length})${c.reset}`);
-  for (const skill of CORE_SKILLS) {
-    if (await downloadFile(
-      `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-    )) installed++;
-  }
-
-  // Builder Skills
-  console.log(`\n${c.bold}Step 6: Builder Skills (${BUILDER_SKILLS.length})${c.reset}`);
-  for (const skill of BUILDER_SKILLS) {
-    if (await downloadFile(
-      `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-    )) installed++;
-  }
-
-  // LEX-BR Skills (legal Brasil)
-  console.log(`\n${c.bold}Step 6a: LEX-BR Skills (${LEX_SKILLS.length}) — Legal Brasil${c.reset}`);
-  for (const skill of LEX_SKILLS) {
-    if (await downloadFile(
-      `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-    )) installed++;
-  }
-
-  // DEMETER Skills (data engineering)
-  console.log(`\n${c.bold}Step 6b: DEMETER Skills (${DEMETER_SKILLS.length}) — Data Engineering & Analytics${c.reset}`);
-  for (const skill of DEMETER_SKILLS) {
-    if (await downloadFile(
-      `${REPO_RAW}/skills/${skill}/SKILL.md`,
-      path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-    )) installed++;
-  }
-
-  // v11.4.0 — 6 new squads (ORION, OBSIDIAN, MEDIK, CAMPUS, AEGIS, ZENITH)
-  let stepNum = 'c';
-  for (const [squadName, skills] of Object.entries(V11_4_SQUADS)) {
-    console.log(`\n${c.bold}Step 6${stepNum}: ${squadName} (${skills.length} skills)${c.reset}`);
-    for (const skill of skills) {
-      if (await downloadFile(
-        `${REPO_RAW}/skills/${skill}/SKILL.md`,
-        path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-      )) installed++;
-    }
-    stepNum = String.fromCharCode(stepNum.charCodeAt(0) + 1);
-  }
-
-  // v11.5.0 — 2 new squads (GAIA + NOMOS)
-  for (const [squadName, skills] of Object.entries(V11_5_SQUADS)) {
-    console.log(`\n${c.bold}Step 6${stepNum}: ${squadName} (${skills.length} skills)${c.reset}`);
-    for (const skill of skills) {
-      if (await downloadFile(
-        `${REPO_RAW}/skills/${skill}/SKILL.md`,
-        path.join(SKILLS_DIR, skill, 'SKILL.md'), skill, upgrade
-      )) installed++;
-    }
-    stepNum = String.fromCharCode(stepNum.charCodeAt(0) + 1);
-  }
-
-  // Python deps
-  console.log(`\n${c.bold}Step 7: Python Dependencies${c.reset}`);
-  let pythonCmd = null;
-  try { execSync('python3 --version', { stdio: 'pipe' }); pythonCmd = 'python3'; } catch {
-    try { execSync('python --version', { stdio: 'pipe' }); pythonCmd = 'python'; } catch {
-      warn('Python not found. Install Python 3.11+ for runtime.');
-    }
-  }
-  if (pythonCmd) {
-    log(`Python: ${pythonCmd}`);
+  const py = detectPython();
+  if (py && fs.existsSync(path.join(ORCH_DIR, 'license_manager.py'))) {
+    console.log(`\n${c.bold}${c.cyan}── License status${c.reset}`);
     try {
-      execSync(`${pythonCmd} -m pip install fastapi uvicorn pyyaml --quiet`, { stdio: 'pipe', timeout: 60000 });
-      log('Dependencies: fastapi + uvicorn + pyyaml installed');
-    } catch { warn('pip install failed — install manually: pip install fastapi uvicorn pyyaml'); }
+      execSync(`${py.cmd} license_manager.py --check`,
+        { stdio: 'inherit', cwd: ORCH_DIR });
+    } catch {}
   }
 
-  // Initialize DB
-  console.log(`\n${c.bold}Step 8: Initialize Database${c.reset}`);
-  if (pythonCmd) {
+  if (fs.existsSync(path.join(ORCH_DIR, '.git'))) {
+    console.log(`\n${c.bold}${c.cyan}── Git state${c.reset}`);
     try {
-      execSync(`cd "${ORCH_DIR}" && ${pythonCmd} -c "import sys;sys.path.insert(0,'.');from db import DB;db=DB();print(f'DB: {db.stats()}')"`, { stdio: 'inherit', timeout: 10000 });
-    } catch { warn('DB init failed — will auto-init on first runtime start'); }
+      const head = execSync(`git -C "${ORCH_DIR}" rev-parse --short HEAD`).toString().trim();
+      const branch = execSync(`git -C "${ORCH_DIR}" rev-parse --abbrev-ref HEAD`).toString().trim();
+      log(`branch=${branch} head=${head}`);
+    } catch {}
   }
-
-  // Summary
-  console.log(`\n${c.bold}${c.cyan}═══ Installation Summary ═══${c.reset}\n`);
-  console.log(`  Version:        ${c.green}${c.bold}v${VERSION}${c.reset}`);
-  console.log(`  Components:     ${c.bold}${installed}${c.reset} installed/updated`);
-  console.log(`  Engines:        ${CORE_ENGINES.length} Python modules`);
-  const V11_4_TOTAL = Object.values(V11_4_SQUADS).reduce((s, sk) => s + sk.length, 0);
-  const V11_5_TOTAL = Object.values(V11_5_SQUADS).reduce((s, sk) => s + sk.length, 0);
-  console.log(`  Skills:         ${CORE_SKILLS.length + BUILDER_SKILLS.length + LEX_SKILLS.length + DEMETER_SKILLS.length + V11_4_TOTAL + V11_5_TOTAL}`);
-  console.log(`                  ${BUILDER_SKILLS.length} builder + ${LEX_SKILLS.length} LEX-BR + ${DEMETER_SKILLS.length} DEMETER + ${V11_4_TOTAL} v11.4 + ${V11_5_TOTAL} v11.5 (GAIA+NOMOS)`);
-  console.log(`  Configs:        ${CONFIGS.length + DATA_FILES.length} YAML files`);
-  console.log(`  Path:           ${ORCH_DIR}`);
-  console.log('');
-
-  verify();
-  if (!upgrade) printNextSteps();
 }
 
-function verify() {
-  console.log(`\n${c.bold}${c.cyan}═══ Verification ═══${c.reset}\n`);
-  let pass = 0, total = 0;
-  function chk(p, label) {
-    total++;
-    if (fileExists(p)) { log(`V ${label}`); pass++; }
-    else { warn(`X ${label}`); }
-  }
-
-  chk(path.join(ORCH_DIR, 'company.yaml'), 'Company hierarchy (269 skills)');
-  chk(path.join(ORCH_DIR, 'runtime.py'), 'Runtime server (90+ endpoints)');
-  chk(path.join(ORCH_DIR, 'db.py'), 'SQLite persistence');
-  chk(path.join(ORCH_DIR, 'core_upgrades.py'), 'Core Upgrades v11.0');
-  chk(path.join(ORCH_DIR, 'execution_upgrades.py'), 'Execution Pipeline (168 agent cards)');
-  chk(path.join(ORCH_DIR, 'intelligence_upgrades.py'), 'Intelligence (Q-value + KnowledgeGraph)');
-  chk(path.join(ORCH_DIR, 'security_upgrades.py'), 'Security (OWASP 10/10)');
-  chk(path.join(ORCH_DIR, 'pt_validators.py'), 'PT Validators (NIF/ATCUD/SNC/IVA)');
-  chk(path.join(ORCH_DIR, 'financial_dashboard.py'), 'CFO Dashboard');
-  chk(path.join(ORCH_DIR, 'bank_parser.py'), 'Bank Parser (6 PT banks)');
-  chk(path.join(ORCH_DIR, 'integration_registry.yaml'), 'Integration Registry (42 repos)');
-  chk(path.join(SKILLS_DIR, 'dario-cfo', 'SKILL.md'), 'CFO VP skill');
-  chk(path.join(SKILLS_DIR, 'builder-landing-page', 'SKILL.md'), 'Builder: Landing Page');
-  chk(path.join(SKILLS_DIR, 'builder-nextjs-monorepo', 'SKILL.md'), 'Builder: Monorepo (next-forge)');
-  chk(path.join(SKILLS_DIR, 'builder-visual-to-code', 'SKILL.md'), 'Builder: Visual to Code');
-
-  // v11.1.0 Cognitive Audit modules
-  chk(path.join(ORCH_DIR, 'semantic_dispatch.py'), 'U1: Semantic Dispatch (embeddings)');
-  chk(path.join(ORCH_DIR, 'ethical_gate.py'),      'U2: Ethical Pre-Gate (triade)');
-  chk(path.join(ORCH_DIR, 'confidence_engine.py'), 'U4: Confidence Engine (5-way gate)');
-  chk(path.join(ORCH_DIR, 'dispatch_cot.py'),      'U9: Chain-of-Thought + Postmortem');
-  chk(path.join(ORCH_DIR, 'cron_daily.py'),        'U12: Cron Daily (6 jobs)');
-  chk(path.join(ORCH_DIR, 'cognitive_dashboard.py'), 'U13: Cognitive Dashboard HTML');
-  chk(path.join(ORCH_DIR, 'webhook_dispatcher.py'), 'U15: Webhook Dispatcher');
-  chk(path.join(ORCH_DIR, 'weekly_summary.py'),    'U18: Weekly Summary');
-  chk(path.join(ORCH_DIR, 'license_guard.py'),     'v11.1.1: License Guard (closes trial leak)');
-
-  console.log(`\n  ${c.bold}Score: ${pass}/${total}${c.reset}`);
-  if (pass === total) console.log(`  ${c.green}${c.bold}V DARIO v${VERSION} — FULLY OPERATIONAL${c.reset}`);
-  else console.log(`  ${c.yellow}${pass}/${total} — some files may need manual download${c.reset}`);
-}
-
-function printNextSteps() {
+function printSummary(vip, parsed) {
   console.log(`
-${c.bold}${c.cyan}═══ Next Steps ═══${c.reset}
+${c.bold}${c.cyan}── Installation summary${c.reset}
 
-  ${c.bold}1.${c.reset} Start runtime:  ${c.blue}cd ${ORCH_DIR} && python runtime.py --port 8422${c.reset}
-  ${c.bold}2.${c.reset} Health check:   ${c.blue}curl http://localhost:8422/health${c.reset}
-  ${c.bold}3.${c.reset} CFO Dashboard:  ${c.blue}http://localhost:8422/cfo${c.reset}
-  ${c.bold}4.${c.reset} All endpoints:  ${c.blue}http://localhost:8422/core/status${c.reset}
+  Mode:        ${vip ? `${c.magenta}VIP${c.reset} (${parsed.suffix})` : `${c.yellow}TRIAL${c.reset} (7 days)`}
+  Path:        ${ORCH_DIR}
+  Version:     ${VERSION}
 
-  ${c.bold}Skills available:${c.reset}
-  /dario-diagnose    — Holistic diagnostic
-  /dario-brand       — Brand positioning
-  /dario-cfo         — CFO virtual (PT compliance)
-  /builder-landing-page — Generate landing page
-  /builder-nextjs-app   — Scaffold Next.js app
-  /seo-audit         — Full SEO audit
+${c.bold}${c.cyan}── Next steps${c.reset}
 
-${c.cyan}Demo: http://31.97.53.231:8422${c.reset}
-${c.cyan}Docs: https://github.com/bardapraiacaraiva/dario-orchestrator${c.reset}
-${c.cyan}Full version: barda@automationsolutionai.com${c.reset}
+  1. Open Claude Code in this directory:    ${c.blue}cd ${ORCH_DIR} && claude${c.reset}
+  2. Check license:                          ${c.blue}python license_manager.py --check${c.reset}
+  3. Start runtime (optional):               ${c.blue}python runtime.py --port 8422${c.reset}
+  4. Health endpoint:                        ${c.blue}curl http://localhost:8422/health${c.reset}
+
+${c.bold}Help / support:${c.reset}  barda@automationsolutionai.com
+${c.bold}Docs:${c.reset}           https://github.com/bardapraiacaraiva/dario-orchestrator
 `);
 }
 
-// ═══ Main ═══
-async function main() {
-  const args = process.argv.slice(2);
-  const mode = args.includes('--upgrade') ? 'upgrade'
-    : args.includes('--check') ? 'check'
-    : 'install';
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry
+// ─────────────────────────────────────────────────────────────────────────────
+function main() {
+  const args = parseArgs(process.argv.slice(2));
 
-  banner(mode);
+  if (args.mode === 'version') { console.log(VERSION); return; }
+  if (args.mode === 'help')    { help(); return; }
+
+  banner(args.mode);
+  if (args.dryRun) log(`${c.dim}(dry-run mode — nothing will be changed)${c.reset}`);
 
   try {
-    switch (mode) {
-      case 'upgrade': await install(true); break;
-      case 'check': verify(); break;
-      case 'install': await install(false); break;
-    }
+    if (args.mode === 'install') doInstall(args);
+    else if (args.mode === 'upgrade') doUpgrade(args);
+    else if (args.mode === 'check')   doCheck();
   } catch (e) {
-    err(`Failed: ${e.message}`);
+    die(e.message || String(e));
   }
 }
 
