@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.2.0';
+const VERSION = '12.3.0';
 const HOME = os.homedir();
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
 const SKILLS_DIR = path.join(HOME, '.claude', 'skills');
@@ -41,10 +41,14 @@ const step = (n, m) => console.log(`\n${c.bold}${c.cyan}── Step ${n}: ${m}${
 // Args
 // ─────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
+  // v12.3.0 (2026-05-23): --obfuscated is now the DEFAULT for all installs.
+  // Opt out with --source if you need to read / debug / modify the .py
+  // (e.g., dev integration). All paid customers and casual trials get
+  // Cython-compiled binaries unless they explicitly ask for source.
   const a = {
     mode: 'install', key: null, token: null,
     dryRun: false, force: false,
-    obfuscated: false, releaseTag: null,
+    obfuscated: true, releaseTag: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -54,7 +58,8 @@ function parseArgs(argv) {
     else if (v === '--version' || v === '-v') a.mode = 'version';
     else if (v === '--dry-run') a.dryRun = true;
     else if (v === '--force') a.force = true;
-    else if (v === '--obfuscated') a.obfuscated = true;
+    else if (v === '--obfuscated') a.obfuscated = true;          // explicit opt-in (now redundant — default)
+    else if (v === '--source' || v === '--no-obfuscated') a.obfuscated = false;  // dev opt-out
     else if (v === '--key') a.key = argv[++i];
     else if (v === '--token') a.token = argv[++i];
     else if (v === '--release-tag') a.releaseTag = argv[++i];
@@ -107,12 +112,19 @@ ${c.bold}LICENSE${c.reset}
 ${c.bold}OPTIONS${c.reset}
   --dry-run            Show what would happen without doing it
   --force              Re-clone even if ~/.claude/orchestrator exists
-  --obfuscated         After cloning, download the latest Cython-compiled
-                       binaries (.pyd/.so) from GitHub Releases and remove
-                       the .py sources for license_manager / license_client
-                       / license_server. Raises bypass cost from ~30 min
-                       (edit .py) to ~3 days (Cython disassembly + Onda 10
-                       hardening). Recommended for VIP deployments.
+  --obfuscated         [DEFAULT since v12.3.0] After cloning, download the
+                       latest Cython-compiled binaries (.pyd/.so) from
+                       GitHub Releases and remove the .py sources for
+                       license_manager / license_client / license_server.
+                       Bypass cost is ~3 days expert (Cython disassembly +
+                       Onda 10 hardening) instead of ~30 min (edit .py).
+  --source             Opt out of the default obfuscation. Keeps .py
+                       sources readable / debuggable. Use this if you are
+                       a dev integrating with the orchestrator and need
+                       to step through license_manager logic in pdb. The
+                       license enforcement still applies — only the
+                       readability changes.
+  --no-obfuscated      Alias for --source.
   --release-tag TAG    Pin the obfuscated overlay to a specific release tag
                        (default: latest). Format: release/license-vX.Y.Z
 

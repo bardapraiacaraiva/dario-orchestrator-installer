@@ -2,6 +2,8 @@
 
 One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/bardapraiacaraiva/dario-orchestrator) — 32 squads, 559+ skills, 59 license tiers.
 
+> **v12.3.0 (2026-05-23):** Cython-compiled binaries are now the **default** for all installs. To get readable `.py` source instead, add `--source` (intended for devs / pdb step-through).
+
 ## Quick start
 
 ### Trial install (free, public repo, 7-day trial)
@@ -10,7 +12,15 @@ One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/ba
 npx github:bardapraiacaraiva/dario-orchestrator-installer
 ```
 
-This clones the public repo to `~/.claude/orchestrator`, runs the post-install setup, and starts a 7-day trial that gives showcase access to all 32 squads.
+This clones the public repo to `~/.claude/orchestrator`, downloads the latest Cython-compiled binaries (.pyd on Windows / .so on Linux), removes the .py originals for license code, runs the post-install setup, and starts a 7-day trial that gives showcase access to all 32 squads. License enforcement bypass cost is raised from ~30 min (edit .py) to ~3 days expert (Cython disassembly).
+
+### Trial with source (devs, integration debugging)
+
+```bash
+npx github:bardapraiacaraiva/dario-orchestrator-installer --source
+```
+
+Opts out of the obfuscation overlay. Identical functionality at runtime; the .py files stay readable. Use this if you need to step through `license_manager.py` with pdb, or if you're integrating the orchestrator with another system and need to inspect the dispatch logic. License enforcement still applies.
 
 ### Upgrade an existing install
 
@@ -44,13 +54,15 @@ Reports install state, license validity, current git branch + HEAD.
 
 | Flag | What it does |
 |---|---|
-| (none) | Trial install |
-| `--upgrade` | git pull + re-run upgrade script |
+| (none) | Trial install with **default Cython obfuscation** |
+| `--source` / `--no-obfuscated` | Skip obfuscation overlay — keep .py source readable |
+| `--upgrade` | git pull + re-run upgrade script (preserves prior obfuscation state) |
 | `--check` | Verify install + license |
 | `--help` | Full help message |
 | `--version` | Print installer version |
 | `--key DARIO-...` | Activate this license key after install |
 | `--token GHP_xxx` | GitHub PAT for the private VIP repo (or env `DARIO_GH_TOKEN`) |
+| `--release-tag TAG` | Pin obfuscation overlay to specific release (default: latest) |
 | `--dry-run` | Show actions without executing |
 | `--force` | Re-clone even if `~/.claude/orchestrator` exists |
 
