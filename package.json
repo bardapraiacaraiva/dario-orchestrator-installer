@@ -1,6 +1,6 @@
 {
   "name": "@dario-ai/orchestrator-installer",
-  "version": "12.1.0",
+  "version": "12.2.0",
   "description": "One-line installer + upgrader for the DARIO Orchestrator (32 squads, 559+ skills, 59 license tiers). Clones the trial or VIP repo, runs upgrade script, activates license.",
   "bin": {
     "dario-installer": "./bin/install.js",
