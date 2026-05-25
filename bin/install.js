@@ -17,10 +17,20 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.4.0';
+const VERSION = '12.4.1';
 const HOME = os.homedir();
+const CLAUDE_DIR = path.join(HOME, '.claude');
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
 const SKILLS_DIR = path.join(HOME, '.claude', 'skills');
+
+// v12.4.1 (2026-05-25) — Layout fix: repo content is structured as
+// <root>/{orchestrator,skills,runtime,LICENSE,README.md}, so cloning
+// the whole repo into ORCH_DIR creates nested ~/.claude/orchestrator/
+// orchestrator/ which breaks all Python imports. Fix: clone to a temp
+// dir, then relocate top-level dirs into ~/.claude/, and move the .git
+// directory to ~/.claude/.git. Existing files in ~/.claude/ are
+// preserved unless they collide with a repo file (in which case we
+// abort and ask the user to back up and re-run with --force).
 
 const REPO_TRIAL = 'https://github.com/bardapraiacaraiva/dario-orchestrator.git';
 const REPO_VIP   = 'https://github.com/bardapraiacaraiva/dario-orchestrator-full.git';
@@ -54,6 +64,7 @@ function parseArgs(argv) {
     const v = argv[i];
     if (v === '--upgrade') a.mode = 'upgrade';
     else if (v === '--check') a.mode = 'check';
+    else if (v === '--fix-layout') a.mode = 'fix-layout';
     else if (v === '--help' || v === '-h') a.mode = 'help';
     else if (v === '--version' || v === '-v') a.mode = 'version';
     else if (v === '--dry-run') a.dryRun = true;
@@ -73,14 +84,15 @@ function parseArgs(argv) {
 
 function banner(mode) {
   const title =
-    mode === 'upgrade' ? `UPGRADE → v${VERSION}` :
-    mode === 'check'   ? 'CHECK INSTALLATION'    :
-    mode === 'help'    ? 'HELP'                  :
-                         `INSTALL v${VERSION}`;
+    mode === 'upgrade'    ? `UPGRADE → v${VERSION}`        :
+    mode === 'check'      ? 'CHECK INSTALLATION'           :
+    mode === 'fix-layout' ? 'FIX NESTED LAYOUT (v12.4.1)'  :
+    mode === 'help'       ? 'HELP'                         :
+                            `INSTALL v${VERSION}`;
   console.log(`
 ${c.bold}${c.cyan}╔══════════════════════════════════════════════════════════════════╗
 ║  DARIO ORCHESTRATOR — ${title.padEnd(43)}║
-║  32 squads · 559+ skills · 59 license tiers · v${VERSION.padEnd(18)}║
+║  32 squads · 559+ skills · 3 license tiers · v${VERSION.padEnd(19)}║
 ╚══════════════════════════════════════════════════════════════════╝${c.reset}
 `);
 }
@@ -92,8 +104,12 @@ ${c.bold}USAGE${c.reset}
 
 ${c.bold}MODES${c.reset}
   (default)            Install trial (public repo + 7-day trial)
-  --upgrade            Pull latest + run upgrade script (idempotent)
-  --check              Verify install + license status
+  --upgrade            Pull latest + run upgrade script (idempotent).
+                       Auto-detects and fixes pre-v12.4.1 nested layout.
+  --fix-layout         Migrate a pre-v12.4.1 nested install to flat layout
+                       without doing a git pull (in-place, preserves runtime
+                       state). Safe no-op if already flat.
+  --check              Verify install + license status + layout
   --help               This message
   --version            Print installer version
 
@@ -221,6 +237,157 @@ function gitClone(url, dest, dry) {
 function gitPull(dest, dry) {
   if (dry) { console.log(`  [dry-run] git -C ${dest} pull --ff-only`); return; }
   execSync(`git -C "${dest}" pull --ff-only`, { stdio: 'inherit' });
+}
+
+// v12.4.1 — Safe clone-and-relocate. Repo content is at <root>/{orchestrator,
+// skills,runtime,...}, so we clone to a temp dir then move each top-level
+// entry into ~/.claude/, and move .git to ~/.claude/.git. Existing
+// non-conflicting files in ~/.claude/ (settings.json, sessions/, etc.) are
+// preserved.
+function gitCloneIntoClaudeDir(url, dry, force) {
+  if (dry) {
+    console.log(`  [dry-run] git clone ${url} <temp>`);
+    console.log(`  [dry-run] relocate <temp>/* into ${CLAUDE_DIR}/`);
+    console.log(`  [dry-run] move <temp>/.git to ${CLAUDE_DIR}/.git`);
+    return;
+  }
+
+  const claudeGit = path.join(CLAUDE_DIR, '.git');
+  if (fs.existsSync(claudeGit) && !force) {
+    die(`${claudeGit} already exists — looks like a previous install.\n` +
+        `  Run with --upgrade to update, or --force to remove and re-clone.`);
+  }
+
+  ensureParentDir(CLAUDE_DIR);
+  if (!fs.existsSync(CLAUDE_DIR)) fs.mkdirSync(CLAUDE_DIR, { recursive: true });
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dario-install-'));
+  const tempClone = path.join(tempDir, 'clone');
+  log(`Cloning to temp: ${tempClone}`);
+  execSync(`git clone --depth 1 "${url}" "${tempClone}"`, { stdio: 'inherit' });
+
+  // Detect conflicts: any top-level entry from the clone that already exists
+  // in CLAUDE_DIR with different content is a problem.
+  const entries = fs.readdirSync(tempClone).filter(e => e !== '.git');
+  const conflicts = [];
+  for (const entry of entries) {
+    const dest = path.join(CLAUDE_DIR, entry);
+    if (fs.existsSync(dest)) {
+      // For directories, that's a conflict only if we'd overwrite files.
+      // For files, any existing file is a conflict.
+      if (fs.statSync(dest).isFile()) conflicts.push(entry);
+      // Directory collisions handled by merging — flagged below if --force
+      else if (fs.readdirSync(dest).length > 0) conflicts.push(entry + '/ (non-empty)');
+    }
+  }
+  if (conflicts.length > 0 && !force) {
+    warn(`Conflicts detected in ${CLAUDE_DIR}:`);
+    for (const c of conflicts) warn(`  - ${c}`);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    die(`Cannot relocate without overwriting. Back up the conflicting paths and re-run with --force, OR use --upgrade if this is an existing DARIO install.`);
+  }
+
+  // Move .git first
+  fs.renameSync(path.join(tempClone, '.git'), claudeGit);
+  log(`  moved .git → ${claudeGit}`);
+
+  // Then relocate each top-level entry (directories merge, files overwrite if --force)
+  for (const entry of entries) {
+    const src = path.join(tempClone, entry);
+    const dest = path.join(CLAUDE_DIR, entry);
+    if (fs.existsSync(dest) && fs.statSync(dest).isDirectory() && fs.statSync(src).isDirectory()) {
+      // Directory merge: copy each child from src into dest
+      copyDirRecursiveMerging(src, dest);
+      fs.rmSync(src, { recursive: true, force: true });
+    } else {
+      if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+      fs.renameSync(src, dest);
+    }
+    log(`  relocated ${entry}`);
+  }
+
+  // Cleanup temp
+  fs.rmSync(tempDir, { recursive: true, force: true });
+}
+
+function copyDirRecursiveMerging(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const s = path.join(src, entry);
+    const d = path.join(dest, entry);
+    const stat = fs.statSync(s);
+    if (stat.isDirectory()) {
+      copyDirRecursiveMerging(s, d);
+    } else {
+      fs.copyFileSync(s, d);
+    }
+  }
+}
+
+// Detect install layout. Returns 'flat' (correct), 'nested' (bug from
+// pre-v12.4.1 installs), or 'missing' (no install).
+function detectLayout() {
+  const flatMarker  = path.join(CLAUDE_DIR, 'orchestrator', 'dispatch_engine.py');
+  const nestedMarker = path.join(CLAUDE_DIR, 'orchestrator', 'orchestrator', 'dispatch_engine.py');
+  if (fs.existsSync(flatMarker))   return 'flat';
+  if (fs.existsSync(nestedMarker)) return 'nested';
+  return 'missing';
+}
+
+// Migrate a nested install to flat layout (in-place, preserving runtime
+// state and git history).
+function fixNestedLayout(dry) {
+  log(`Detected NESTED layout — migrating to flat (v12.4.1 fix)...`);
+  if (dry) {
+    console.log(`  [dry-run] would move ${ORCH_DIR}/orchestrator/* up one level`);
+    console.log(`  [dry-run] would move ${ORCH_DIR}/skills, ${ORCH_DIR}/runtime to ${CLAUDE_DIR}/`);
+    console.log(`  [dry-run] would move ${ORCH_DIR}/.git to ${CLAUDE_DIR}/.git`);
+    return;
+  }
+
+  const nestedRoot = ORCH_DIR;  // ~/.claude/orchestrator/
+  const tempStaging = path.join(os.tmpdir(), `dario-fix-${Date.now()}`);
+  fs.mkdirSync(tempStaging, { recursive: true });
+
+  // Step 1: move .git out of nestedRoot (it will become CLAUDE_DIR/.git)
+  const nestedGit = path.join(nestedRoot, '.git');
+  if (fs.existsSync(nestedGit)) {
+    fs.renameSync(nestedGit, path.join(tempStaging, '.git'));
+    log(`  staged .git → temp`);
+  }
+
+  // Step 2: move every top-level dir (orchestrator/, skills/, runtime/, etc.)
+  // out of nestedRoot
+  for (const entry of fs.readdirSync(nestedRoot)) {
+    const src = path.join(nestedRoot, entry);
+    fs.renameSync(src, path.join(tempStaging, entry));
+    log(`  staged ${entry} → temp`);
+  }
+
+  // Step 3: delete the now-empty ORCH_DIR shell so we can repopulate it
+  fs.rmdirSync(nestedRoot);
+
+  // Step 4: place .git into CLAUDE_DIR
+  if (fs.existsSync(path.join(tempStaging, '.git'))) {
+    fs.renameSync(path.join(tempStaging, '.git'), path.join(CLAUDE_DIR, '.git'));
+    log(`  installed .git → ${CLAUDE_DIR}/.git`);
+  }
+
+  // Step 5: relocate each entry from temp into CLAUDE_DIR (directory merge)
+  for (const entry of fs.readdirSync(tempStaging)) {
+    const src = path.join(tempStaging, entry);
+    const dest = path.join(CLAUDE_DIR, entry);
+    if (fs.existsSync(dest) && fs.statSync(dest).isDirectory() && fs.statSync(src).isDirectory()) {
+      copyDirRecursiveMerging(src, dest);
+      fs.rmSync(src, { recursive: true, force: true });
+    } else {
+      fs.renameSync(src, dest);
+    }
+    log(`  installed ${entry} → ${CLAUDE_DIR}/${entry}`);
+  }
+
+  fs.rmSync(tempStaging, { recursive: true, force: true });
+  log(`Layout migration complete. Python files now at ${ORCH_DIR}/*.py`);
 }
 
 function repoUrlWithToken(url, token) {
@@ -396,15 +563,25 @@ async function doInstall(args) {
         `  Contact barda@automationsolutionai.com if you don't have one.`);
 
   step(2, vip ? 'Clone VIP repo (dario-orchestrator-full)' : 'Clone trial repo (dario-orchestrator)');
-  if (fs.existsSync(ORCH_DIR) && !args.force) {
-    die(`${ORCH_DIR} already exists. Use --upgrade to update, or --force to re-clone.`);
+  // v12.4.1 fix: install detects existing nested or flat layouts and
+  // refuses to clobber. Use --upgrade for existing installs, --force to
+  // wipe and re-clone.
+  const layout = detectLayout();
+  if (layout !== 'missing' && !args.force) {
+    die(`Existing DARIO install detected (layout=${layout}) at ${CLAUDE_DIR}.\n` +
+        `  Use --upgrade to update, or --force to wipe and re-clone.`);
   }
-  if (fs.existsSync(ORCH_DIR) && args.force) {
-    log(`--force given; removing ${ORCH_DIR}`);
-    if (!args.dryRun) fs.rmSync(ORCH_DIR, { recursive: true, force: true });
+  if (layout !== 'missing' && args.force) {
+    log(`--force given; removing existing install`);
+    if (!args.dryRun) {
+      if (fs.existsSync(ORCH_DIR))                          fs.rmSync(ORCH_DIR, { recursive: true, force: true });
+      if (fs.existsSync(path.join(CLAUDE_DIR, '.git')))     fs.rmSync(path.join(CLAUDE_DIR, '.git'), { recursive: true, force: true });
+      if (fs.existsSync(path.join(CLAUDE_DIR, 'skills')))   fs.rmSync(path.join(CLAUDE_DIR, 'skills'), { recursive: true, force: true });
+      if (fs.existsSync(path.join(CLAUDE_DIR, 'runtime')))  fs.rmSync(path.join(CLAUDE_DIR, 'runtime'), { recursive: true, force: true });
+    }
   }
   const url = vip ? repoUrlWithToken(REPO_VIP, args.token) : REPO_TRIAL;
-  gitClone(url, ORCH_DIR, args.dryRun);
+  gitCloneIntoClaudeDir(url, args.dryRun, args.force);
 
   if (args.obfuscated) {
     step(3, 'Install Cython-compiled overlay (binaries replace .py for license code)');
@@ -430,27 +607,76 @@ async function doInstall(args) {
 
 function doUpgrade(args) {
   const { python } = checkPrereqs();
-  if (!fs.existsSync(path.join(ORCH_DIR, '.git'))) {
-    die(`No git repo at ${ORCH_DIR}. Run install first (no --upgrade).`);
-  }
-  step(2, 'git pull --ff-only');
-  gitPull(ORCH_DIR, args.dryRun);
+  const layout = detectLayout();
 
-  step(3, 'Re-run upgrade_v12_1.py (idempotent)');
+  if (layout === 'missing') {
+    die(`No DARIO install detected at ${CLAUDE_DIR}. Run install first (no --upgrade).`);
+  }
+
+  if (layout === 'nested') {
+    step(2, 'Fix nested layout (pre-v12.4.1 install)');
+    fixNestedLayout(args.dryRun);
+  }
+
+  // After potential fix, the git repo should be at CLAUDE_DIR/.git (flat).
+  // Fall back to ORCH_DIR/.git for any unusual legacy install.
+  const gitDir = fs.existsSync(path.join(CLAUDE_DIR, '.git'))
+    ? CLAUDE_DIR
+    : (fs.existsSync(path.join(ORCH_DIR, '.git')) ? ORCH_DIR : null);
+  if (!gitDir) {
+    die(`Could not find .git in ${CLAUDE_DIR} or ${ORCH_DIR}. Install may be corrupted — try --force --upgrade or re-install.`);
+  }
+
+  step(layout === 'nested' ? 3 : 2, 'git pull --ff-only');
+  gitPull(gitDir, args.dryRun);
+
+  step(layout === 'nested' ? 4 : 3, 'Re-run upgrade_v12_1.py (idempotent)');
   if (python) runUpgradeScript(python, args.dryRun);
 
-  step(4, 'Done');
+  step(layout === 'nested' ? 5 : 4, 'Done');
   log(`Orchestrator at ${ORCH_DIR} is up to date.`);
+}
+
+function doFixLayout(args) {
+  const layout = detectLayout();
+  if (layout === 'flat') {
+    log(`Layout already flat at ${ORCH_DIR}. Nothing to fix.`);
+    return;
+  }
+  if (layout === 'missing') {
+    die(`No DARIO install detected. Use install instead.`);
+  }
+  step(1, 'Fix nested layout');
+  fixNestedLayout(args.dryRun);
+  step(2, 'Done');
+  log(`Layout migrated. Verify with: npx ... --check`);
 }
 
 function doCheck() {
   console.log(`\n${c.bold}${c.cyan}── Install state${c.reset}`);
+
+  const layout = detectLayout();
+  if (layout === 'missing') {
+    warn(`No DARIO install detected at ${CLAUDE_DIR}.`);
+    console.log(`  Run: ${c.blue}npx github:bardapraiacaraiva/dario-orchestrator-installer${c.reset}`);
+    return;
+  }
+  if (layout === 'nested') {
+    warn(`NESTED LAYOUT detected (pre-v12.4.1 install bug).`);
+    warn(`  Python files at ${ORCH_DIR}/orchestrator/ instead of ${ORCH_DIR}/`);
+    warn(`  All imports will fail. Fix with: npx ... --fix-layout (or --upgrade)`);
+    console.log('');
+  } else {
+    log(`✓ Layout=flat (correct)`);
+  }
+
   const checks = [
     ['Orchestrator dir',  ORCH_DIR],
     ['license_manager.py', path.join(ORCH_DIR, 'license_manager.py')],
     ['runtime.py',         path.join(ORCH_DIR, 'runtime.py')],
     ['scripts/upgrade_v12_1.py', path.join(ORCH_DIR, 'scripts', 'upgrade_v12_1.py')],
     ['company.yaml',       path.join(ORCH_DIR, 'company.yaml')],
+    ['dispatch_engine.py (post-v12.4.0)', path.join(ORCH_DIR, 'dispatch_engine.py')],
   ];
   let pass = 0;
   for (const [label, p] of checks) {
@@ -468,12 +694,20 @@ function doCheck() {
     } catch {}
   }
 
-  if (fs.existsSync(path.join(ORCH_DIR, '.git'))) {
+  // Git repo is at CLAUDE_DIR (flat) or ORCH_DIR (legacy nested).
+  const gitDir = fs.existsSync(path.join(CLAUDE_DIR, '.git'))
+    ? CLAUDE_DIR
+    : (fs.existsSync(path.join(ORCH_DIR, '.git')) ? ORCH_DIR : null);
+  if (gitDir) {
     console.log(`\n${c.bold}${c.cyan}── Git state${c.reset}`);
     try {
-      const head = execSync(`git -C "${ORCH_DIR}" rev-parse --short HEAD`).toString().trim();
-      const branch = execSync(`git -C "${ORCH_DIR}" rev-parse --abbrev-ref HEAD`).toString().trim();
-      log(`branch=${branch} head=${head}`);
+      const head = execSync(`git -C "${gitDir}" rev-parse --short HEAD`).toString().trim();
+      const branch = execSync(`git -C "${gitDir}" rev-parse --abbrev-ref HEAD`).toString().trim();
+      const tag = (() => {
+        try { return execSync(`git -C "${gitDir}" describe --tags --abbrev=0`).toString().trim(); }
+        catch { return null; }
+      })();
+      log(`branch=${branch} head=${head}${tag ? ` tag=${tag}` : ''}`);
     } catch {}
   }
 }
@@ -512,8 +746,9 @@ async function main() {
   if (args.dryRun) log(`${c.dim}(dry-run mode — nothing will be changed)${c.reset}`);
 
   try {
-    if (args.mode === 'install')      await doInstall(args);
-    else if (args.mode === 'upgrade') doUpgrade(args);
+    if (args.mode === 'install')          await doInstall(args);
+    else if (args.mode === 'upgrade')     doUpgrade(args);
+    else if (args.mode === 'fix-layout')  doFixLayout(args);
     else if (args.mode === 'check')   doCheck();
   } catch (e) {
     die(e.message || String(e));

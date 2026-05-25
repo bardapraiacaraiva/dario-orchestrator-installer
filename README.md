@@ -2,6 +2,8 @@
 
 One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/bardapraiacaraiva/dario-orchestrator) — 32 squads, 559+ skills, 3 license tiers (trial / pro / enterprise).
 
+> **v12.4.1 (2026-05-25) — Layout fix:** fresh installs from pre-v12.4.1 installers placed Python files at `~/.claude/orchestrator/orchestrator/` (nested) instead of `~/.claude/orchestrator/` (flat), breaking all imports. v12.4.1 clones to a temp dir and relocates content correctly, preserving existing files (settings.json, sessions/, history.jsonl). Added `--fix-layout` to migrate pre-v12.4.1 nested installs in-place. `--check` detects and warns about nested layouts. **If `--check` shows "NESTED LAYOUT detected", run `--fix-layout` once.**
+>
 > **v12.4.0 (2026-05-25) — Open Everything:** the trial (public) and VIP (private) repos now ship IDENTICAL working code. The "VIP-only stub" gating is removed. License tier signals consulting/support level, not code access. Risks #1/#4/#7/#10 closed. Test surface: 545 tests pass.
 >
 > **Upgrade existing installs:** `npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade` (idempotent, safe to run anytime). Restores ~11K LOC of cognitive features (semantic_dispatch, episode_promoter, q-value memory, prompt hints, ethical_gate, dispatch_cot, synaptic_update, golden_eval, chain_graph, dynamic_branch, prompt_hints, confidence_engine, executor + upgrades/ package).
