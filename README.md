@@ -1,8 +1,12 @@
 # DARIO Orchestrator — Installer
 
-One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/bardapraiacaraiva/dario-orchestrator) — 32 squads, 559+ skills, 59 license tiers.
+One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/bardapraiacaraiva/dario-orchestrator) — 32 squads, 559+ skills, 3 license tiers (trial / pro / enterprise).
 
-> **v12.3.0 (2026-05-23):** Cython-compiled binaries are now the **default** for all installs. To get readable `.py` source instead, add `--source` (intended for devs / pdb step-through).
+> **v12.4.0 (2026-05-25) — Open Everything:** the trial (public) and VIP (private) repos now ship IDENTICAL working code. The "VIP-only stub" gating is removed. License tier signals consulting/support level, not code access. Risks #1/#4/#7/#10 closed. Test surface: 545 tests pass.
+>
+> **Upgrade existing installs:** `npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade` (idempotent, safe to run anytime). Restores ~11K LOC of cognitive features (semantic_dispatch, episode_promoter, q-value memory, prompt hints, ethical_gate, dispatch_cot, synaptic_update, golden_eval, chain_graph, dynamic_branch, prompt_hints, confidence_engine, executor + upgrades/ package).
+>
+> **v12.3.0 (2026-05-23):** Cython-compiled binaries are the **default** for all installs. To get readable `.py` source instead, add `--source` (intended for devs / pdb step-through).
 
 ## Quick start
 
@@ -38,7 +42,27 @@ DARIO_GH_TOKEN=ghp_xxx \
     --key DARIO-XXXX-XXXX-XXXX-PRO
 ```
 
-VIP keys clone the private `dario-orchestrator-full` repo (full feature set) and activate the license immediately. The GitHub token is a read-only PAT for the private repo — contact `barda@automationsolutionai.com` if you don't have one.
+VIP keys clone the private `dario-orchestrator-full` repo and activate the license immediately. The GitHub token is a read-only PAT for the private repo — contact `barda@automationsolutionai.com` if you don't have one.
+
+> **Since v12.4.0 (open everything):** the private VIP repo ships the SAME code as the public trial repo. The VIP install still routes to the private repo for backward compatibility and to gate access via the GitHub PAT (consulting/support tier signal), but no source-code unlock happens — code is identical on both sides.
+
+### Upgrading from v12.x to v12.4.0 (existing VIP / paid clients)
+
+If you installed before 2026-05-25, your install has the old VIP stubs that raise `ImportError` on imports of `dispatch_engine`, `semantic_dispatch`, `episode_promoter`, `qvalue_memory_wire`, `synaptic_update`, etc. Upgrade to restore ~11K LOC of working cognitive features:
+
+```bash
+# Option A — installer-driven (handles dependency updates + post-install)
+npx github:bardapraiacaraiva/dario-orchestrator-installer --upgrade
+
+# Option B — manual git pull (faster, skips dependency check)
+cd ~/.claude && git pull origin master
+cd ~/.claude/orchestrator && .venv/Scripts/python.exe -m pytest -m "not slow" -q
+# Expected: 545 passed
+```
+
+**What you gain:** working `semantic_dispatch`, `dispatch_cot`, `episode_promoter`, `qvalue_memory_wire`, `synaptic_update`, `golden_eval`, `prompt_hints`, `ethical_gate`, `chain_graph`, `dynamic_branch`, `confidence_engine`, `executor`, full `upgrades/` package (21 files: core, execution, financial, intelligence, observability, quality, security, state). Production code paths in `cron_daily` and `cognitive_dashboard` that were silently degraded via try/except ImportError will now actually run.
+
+**No license/key change needed.** Your existing key keeps working — the tier model was simplified to 3 (trial/pro/enterprise) in v12.4.0 but old keys map cleanly.
 
 ### Check status
 
