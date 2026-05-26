@@ -17,12 +17,19 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.4.1';
+const VERSION = '12.5.0';
 const HOME = os.homedir();
 const CLAUDE_DIR = path.join(HOME, '.claude');
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
 const SKILLS_DIR = path.join(HOME, '.claude', 'skills');
 
+// v12.5.0 (2026-05-26) — Observability + Enforcement layer release.
+// New in canonical repo: enforcement/token_capture.py, core/org_tree.py,
+// 7 dashboards refreshed, per-client P&L hooks in budget_tracker.py,
+// 2 new design skills (dario-design-shotgun, emil-design-eng).
+// Installer behavior unchanged from v12.4.1 — same clone-and-relocate
+// flow; users upgrading from v12.4.x just pull new content.
+//
 // v12.4.1 (2026-05-25) — Layout fix: repo content is structured as
 // <root>/{orchestrator,skills,runtime,LICENSE,README.md}, so cloning
 // the whole repo into ORCH_DIR creates nested ~/.claude/orchestrator/
@@ -92,7 +99,7 @@ function banner(mode) {
   console.log(`
 ${c.bold}${c.cyan}╔══════════════════════════════════════════════════════════════════╗
 ║  DARIO ORCHESTRATOR — ${title.padEnd(43)}║
-║  32 squads · 559+ skills · 3 license tiers · v${VERSION.padEnd(19)}║
+║  32 squads · 584+ skills · 3 license tiers · v${VERSION.padEnd(19)}║
 ╚══════════════════════════════════════════════════════════════════╝${c.reset}
 `);
 }
