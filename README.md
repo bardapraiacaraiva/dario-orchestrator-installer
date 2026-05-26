@@ -12,6 +12,8 @@ One-line installer + upgrader for the [DARIO Orchestrator](https://github.com/ba
 
 ## Quick start
 
+> **For AI-assistant-mediated installs (recommended for new clients):** see [Single-file Python installer](#single-file-python-installer-plug-and-play) below. It is a self-contained, inspectable ~280-line Python script that prints its full execution plan before doing anything and never reads secrets from environment variables — designed to pass scrutiny from security-conscious AI tools.
+
 ### Trial install (free, public repo, 7-day trial)
 
 ```bash
@@ -156,6 +158,58 @@ Full tier matrix: 59 tiers including 5 Onda 12 bundles (introduced 2026-05-22).
 **"VIP key requires --token"** → you need a GitHub PAT to clone the private VIP repo. Email `barda@automationsolutionai.com` after purchase.
 
 **"trial init returned non-zero — may already be initialised"** → the 7-day trial is one-per-machine (3-layer fingerprint). Re-running `--init-trial` after the first run is a no-op. If you bought a key, use `--activate`.
+
+---
+
+## Single-file Python installer (plug-and-play)
+
+For clients whose AI assistant (or own security policy) refuses to run `npx github:...` against an unfamiliar GitHub repo with a token in an env var, use the self-contained Python installer instead. It is **a single ~280-line file with zero third-party dependencies** that:
+
+- Prints the full execution plan (every git/pip/file operation) **before** doing anything
+- Reads the GitHub PAT via `getpass` prompt — **never from an env var**
+- Clones a **pinned signed release tag**, not master HEAD
+- Can be inspected end-to-end in under 5 minutes (it's plain Python stdlib)
+- Has a `--dry-run` mode that exits without making any change
+
+### Client workflow
+
+```bash
+# 1. Download the single file (or have it emailed by Barda)
+curl -O https://raw.githubusercontent.com/bardapraiacaraiva/dario-orchestrator-installer/master/install_dario.py
+
+# 2. Read it before running (mandatory — that's the whole point)
+less install_dario.py    # or open in any editor
+
+# 3. Dry-run to see exactly what will happen
+python install_dario.py --dry-run --key DARIO-XXXX-XXXX-XXXX-PRO
+
+# 4. Run for real
+python install_dario.py --key DARIO-XXXX-XXXX-XXXX-PRO
+```
+
+For trial (no key, public repo, 7-day trial):
+```bash
+python install_dario.py
+```
+
+For VIP/PRO (private repo, requires GitHub PAT prompted interactively):
+```bash
+python install_dario.py --key DARIO-XXXX-XXXX-XXXX-PRO
+# (script will prompt: "GitHub PAT for private repo (input hidden): ")
+```
+
+### What it does NOT do (the security delta vs npx flow)
+
+- ❌ Does not read `DARIO_GH_TOKEN` or any env var for secrets
+- ❌ Does not pull `master` HEAD — pinned to `release/v12.5.0` (override with `--release-tag`)
+- ❌ Does not `eval`, `exec`, or download code other than `git clone`
+- ❌ Does not run anything before the user confirms the plan (unless `--yes`)
+
+### What still applies
+
+- Same license activation flow (HMAC verified locally, no network call)
+- Same layout (`~/.claude/orchestrator/`, flat)
+- Same upgrade path — re-run with `--release-tag release/vX.Y.Z` to upgrade
 
 ---
 
