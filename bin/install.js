@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.5.2';
+const VERSION = '12.5.3';
 const HOME = os.homedir();
 const CLAUDE_DIR = path.join(HOME, '.claude');
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
@@ -535,6 +535,58 @@ function runUpgradeScript(py, dry) {
   }
 }
 
+// Create the orchestrator venv and install its Python deps, then return a
+// runner object ({cmd}) pointing at the venv python so license activation and
+// the upgrade script import the right packages. The orchestrator declares its
+// deps in orchestrator/pyproject.toml ([project].dependencies); older builds
+// shipped requirements.txt. Falls back to system python on any failure.
+function setupVenvAndDeps(python, dry) {
+  const venvDir = path.join(ORCH_DIR, '.venv');
+  const isWin = process.platform === 'win32';
+  const venvPython = path.join(venvDir, isWin ? 'Scripts' : 'bin', isWin ? 'python.exe' : 'python');
+  const req = path.join(ORCH_DIR, 'requirements.txt');
+  const pyproject = path.join(ORCH_DIR, 'pyproject.toml');
+
+  if (dry) {
+    console.log(`  [dry-run] ${python.cmd} -m venv ${venvDir}`);
+    if (fs.existsSync(req))            console.log(`  [dry-run] ${venvPython} -m pip install -r ${req}`);
+    else if (fs.existsSync(pyproject)) console.log(`  [dry-run] ${venvPython} -m pip install ${ORCH_DIR}  (from pyproject.toml)`);
+    return python;
+  }
+
+  if (!fs.existsSync(venvPython)) {
+    try {
+      execSync(`${python.cmd} -m venv "${venvDir}"`, { stdio: 'inherit' });
+    } catch (e) {
+      warn(`venv creation failed (${e.message}); using system python — deps may be missing`);
+      return python;
+    }
+  }
+  if (!fs.existsSync(venvPython)) {
+    warn(`venv python not found at ${venvPython}; using system python`);
+    return python;
+  }
+
+  // Keep pip current so PEP 517 builds from pyproject.toml succeed.
+  try { execSync(`"${venvPython}" -m pip install -q --upgrade pip`, { stdio: 'inherit' }); } catch {}
+
+  try {
+    if (fs.existsSync(req)) {
+      execSync(`"${venvPython}" -m pip install -q -r "${req}"`, { stdio: 'inherit' });
+    } else if (fs.existsSync(pyproject)) {
+      log(`no requirements.txt — installing orchestrator from pyproject.toml`);
+      execSync(`"${venvPython}" -m pip install -q "${ORCH_DIR}"`, { stdio: 'inherit', cwd: ORCH_DIR });
+    } else {
+      warn(`no requirements.txt or pyproject.toml — skipping dependency install`);
+    }
+  } catch (e) {
+    warn(`dependency install failed: ${e.message}`);
+    warn(`  run manually: "${venvPython}" -m pip install "${ORCH_DIR}"`);
+  }
+
+  return { cmd: `"${venvPython}"`, version: python.version };
+}
+
 function activateLicense(py, parsed, dry) {
   const lm = path.join(ORCH_DIR, 'licensing', 'license_manager.py');
   if (!fs.existsSync(lm)) { warn(`license_manager.py not found; skipping activation`); return; }
@@ -591,8 +643,9 @@ async function doInstall(args) {
   const url = vip ? repoUrlWithToken(REPO_VIP, args.token) : REPO_TRIAL;
   gitCloneIntoClaudeDir(url, args.dryRun, args.force);
 
+  let sn = 2;  // step 2 was the clone above
   if (args.obfuscated) {
-    step(3, 'Install Cython-compiled overlay (binaries replace .py for license code)');
+    step(++sn, 'Install Cython-compiled overlay (binaries replace .py for license code)');
     try {
       await installObfuscatedOverlay(vip, args.token, args.dryRun, args.releaseTag);
     } catch (e) {
@@ -601,13 +654,16 @@ async function doInstall(args) {
     }
   }
 
-  step(args.obfuscated ? 4 : 3, 'Post-install setup (upgrade_v12_1.py)');
-  if (python) runUpgradeScript(python, args.dryRun);
+  step(++sn, 'Set up Python venv + install dependencies');
+  const runner = python ? setupVenvAndDeps(python, args.dryRun) : null;
 
-  step(args.obfuscated ? 5 : 4, parsed ? `Activate license (${parsed.suffix})` : 'Start 7-day trial');
-  if (python) {
-    if (parsed) activateLicense(python, parsed, args.dryRun);
-    else initTrial(python, args.dryRun);
+  step(++sn, 'Post-install setup (upgrade_v12_1.py)');
+  if (runner) runUpgradeScript(runner, args.dryRun);
+
+  step(++sn, parsed ? `Activate license (${parsed.suffix})` : 'Start 7-day trial');
+  if (runner) {
+    if (parsed) activateLicense(runner, parsed, args.dryRun);
+    else initTrial(runner, args.dryRun);
   }
 
   printSummary(vip, parsed, args.obfuscated);
@@ -638,10 +694,13 @@ function doUpgrade(args) {
   step(layout === 'nested' ? 3 : 2, 'git pull --ff-only');
   gitPull(gitDir, args.dryRun);
 
-  step(layout === 'nested' ? 4 : 3, 'Re-run upgrade_v12_1.py (idempotent)');
-  if (python) runUpgradeScript(python, args.dryRun);
+  step(layout === 'nested' ? 4 : 3, 'Refresh venv + dependencies');
+  const runner = python ? setupVenvAndDeps(python, args.dryRun) : null;
 
-  step(layout === 'nested' ? 5 : 4, 'Done');
+  step(layout === 'nested' ? 5 : 4, 'Re-run upgrade_v12_1.py (idempotent)');
+  if (runner) runUpgradeScript(runner, args.dryRun);
+
+  step(layout === 'nested' ? 6 : 5, 'Done');
   log(`Orchestrator at ${ORCH_DIR} is up to date.`);
 }
 

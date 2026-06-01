@@ -53,7 +53,7 @@ from pathlib import Path
 # Constants — change these via CLI flags, not by editing the file
 # ---------------------------------------------------------------------------
 
-INSTALLER_VERSION = "12.5.2"
+INSTALLER_VERSION = "12.5.3"
 DEFAULT_RELEASE_TAG = "release/v12.5.0"  # orchestrator release pinned (installer 12.5.1 installs orchestrator 12.5.0)
 
 REPO_PUBLIC = "https://github.com/bardapraiacaraiva/dario-orchestrator.git"
@@ -135,7 +135,7 @@ def print_plan(args: argparse.Namespace, state: str) -> None:
     print("    2. Verify HEAD SHA matches the signed tag")
     print(f"    3. Move repo content to {CLAUDE_DIR} (preserves {len(PRESERVE_FILES)} user files)")
     print("    4. Create/update Python venv at ~/.claude/orchestrator/.venv")
-    print("    5. Install pinned dependencies from orchestrator/requirements.txt")
+    print("    5. Install deps (orchestrator/requirements.txt if present, else from pyproject.toml)")
     if args.key:
         print(f"    6. Activate license key (HMAC verified locally, no network call)")
     else:

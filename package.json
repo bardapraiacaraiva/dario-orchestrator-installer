@@ -1,6 +1,6 @@
 {
   "name": "@dario-ai/orchestrator-installer",
-  "version": "12.5.2",
+  "version": "12.5.3",
   "description": "One-line installer + upgrader for the DARIO Orchestrator (32 squads, 584+ skills, 3 license tiers). Clones the trial or VIP repo (Open Everything since v12.4.0), runs upgrade script, activates license. v12.5.1 fixed stale install.js paths after the 2026-05-25 refactor (licensing/, core/, dispatch/); v12.5.2 makes install_dario.py provision deps from pyproject.toml (no requirements.txt) so fresh installs get a working venv. Verified end-to-end (trial install + --check 6/6).",
   "bin": {
     "dario-installer": "./bin/install.js",
