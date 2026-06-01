@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.5.0';
+const VERSION = '12.5.1';
 const HOME = os.homedir();
 const CLAUDE_DIR = path.join(HOME, '.claude');
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
@@ -334,8 +334,9 @@ function copyDirRecursiveMerging(src, dest) {
 // Detect install layout. Returns 'flat' (correct), 'nested' (bug from
 // pre-v12.4.1 installs), or 'missing' (no install).
 function detectLayout() {
-  const flatMarker  = path.join(CLAUDE_DIR, 'orchestrator', 'dispatch_engine.py');
-  const nestedMarker = path.join(CLAUDE_DIR, 'orchestrator', 'orchestrator', 'dispatch_engine.py');
+  // Marker moved into dispatch/ package in the 2026-05-25 refactor (v12.5.0).
+  const flatMarker  = path.join(CLAUDE_DIR, 'orchestrator', 'dispatch', 'dispatch_engine.py');
+  const nestedMarker = path.join(CLAUDE_DIR, 'orchestrator', 'orchestrator', 'dispatch', 'dispatch_engine.py');
   if (fs.existsSync(flatMarker))   return 'flat';
   if (fs.existsSync(nestedMarker)) return 'nested';
   return 'missing';
@@ -506,8 +507,8 @@ async function installObfuscatedOverlay(vip, token, dryRun, requestedTag) {
 
   // 5. Remove the .py originals so the .pyd/.so take over
   const srcCritical = [
-    path.join(ORCH_DIR, 'license_manager.py'),
-    path.join(ORCH_DIR, 'license_client.py'),
+    path.join(ORCH_DIR, 'licensing', 'license_manager.py'),
+    path.join(ORCH_DIR, 'licensing', 'license_client.py'),
     path.join(ORCH_DIR, 'license_server', 'app.py'),
   ];
   let removed = 0;
@@ -535,18 +536,18 @@ function runUpgradeScript(py, dry) {
 }
 
 function activateLicense(py, parsed, dry) {
-  const lm = path.join(ORCH_DIR, 'license_manager.py');
+  const lm = path.join(ORCH_DIR, 'licensing', 'license_manager.py');
   if (!fs.existsSync(lm)) { warn(`license_manager.py not found; skipping activation`); return; }
   if (dry) { console.log(`  [dry-run] ${py.cmd} ${lm} --activate ${parsed.key}`); return; }
   try {
     execSync(`${py.cmd} "${lm}" --activate "${parsed.key}"`, { stdio: 'inherit', cwd: ORCH_DIR });
   } catch (e) {
-    warn(`activation failed — run manually: python license_manager.py --activate ${parsed.key}`);
+    warn(`activation failed — run manually: python licensing/license_manager.py --activate ${parsed.key}`);
   }
 }
 
 function initTrial(py, dry) {
-  const lm = path.join(ORCH_DIR, 'license_manager.py');
+  const lm = path.join(ORCH_DIR, 'licensing', 'license_manager.py');
   if (!fs.existsSync(lm)) { warn(`license_manager.py not found; skipping trial init`); return; }
   if (dry) { console.log(`  [dry-run] ${py.cmd} ${lm} --init-trial`); return; }
   try {
@@ -679,11 +680,11 @@ function doCheck() {
 
   const checks = [
     ['Orchestrator dir',  ORCH_DIR],
-    ['license_manager.py', path.join(ORCH_DIR, 'license_manager.py')],
-    ['runtime.py',         path.join(ORCH_DIR, 'runtime.py')],
+    ['licensing/license_manager.py', path.join(ORCH_DIR, 'licensing', 'license_manager.py')],
+    ['core/runtime.py',    path.join(ORCH_DIR, 'core', 'runtime.py')],
     ['scripts/upgrade_v12_1.py', path.join(ORCH_DIR, 'scripts', 'upgrade_v12_1.py')],
     ['company.yaml',       path.join(ORCH_DIR, 'company.yaml')],
-    ['dispatch_engine.py (post-v12.4.0)', path.join(ORCH_DIR, 'dispatch_engine.py')],
+    ['dispatch/dispatch_engine.py', path.join(ORCH_DIR, 'dispatch', 'dispatch_engine.py')],
   ];
   let pass = 0;
   for (const [label, p] of checks) {
@@ -693,10 +694,10 @@ function doCheck() {
   console.log(`\n  ${c.bold}${pass}/${checks.length} checks passed${c.reset}`);
 
   const py = detectPython();
-  if (py && fs.existsSync(path.join(ORCH_DIR, 'license_manager.py'))) {
+  if (py && fs.existsSync(path.join(ORCH_DIR, 'licensing', 'license_manager.py'))) {
     console.log(`\n${c.bold}${c.cyan}── License status${c.reset}`);
     try {
-      execSync(`${py.cmd} license_manager.py --check`,
+      execSync(`${py.cmd} licensing/license_manager.py --check`,
         { stdio: 'inherit', cwd: ORCH_DIR });
     } catch {}
   }
@@ -731,8 +732,8 @@ ${c.bold}${c.cyan}── Installation summary${c.reset}
 ${c.bold}${c.cyan}── Next steps${c.reset}
 
   1. Open Claude Code in this directory:    ${c.blue}cd ${ORCH_DIR} && claude${c.reset}
-  2. Check license:                          ${c.blue}python license_manager.py --check${c.reset}
-  3. Start runtime (optional):               ${c.blue}python runtime.py --port 8422${c.reset}
+  2. Check license:                          ${c.blue}python licensing/license_manager.py --check${c.reset}
+  3. Start runtime (optional):               ${c.blue}python core/runtime.py --port 8422${c.reset}
   4. Health endpoint:                        ${c.blue}curl http://localhost:8422/health${c.reset}
 
 ${c.bold}Help / support:${c.reset}  barda@automationsolutionai.com

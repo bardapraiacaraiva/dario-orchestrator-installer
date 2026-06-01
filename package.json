@@ -1,7 +1,7 @@
 {
   "name": "@dario-ai/orchestrator-installer",
-  "version": "12.5.0",
-  "description": "One-line installer + upgrader for the DARIO Orchestrator (32 squads, 584+ skills, 3 license tiers). Clones the trial or VIP repo (Open Everything since v12.4.0), runs upgrade script, activates license. v12.5.0 ships observability dashboard expansion + enforcement layer (token_capture) + org_tree for cognitive dashboard + per-client P&L hooks.",
+  "version": "12.5.1",
+  "description": "One-line installer + upgrader for the DARIO Orchestrator (32 squads, 584+ skills, 3 license tiers). Clones the trial or VIP repo (Open Everything since v12.4.0), runs upgrade script, activates license. v12.5.1 fixes stale install.js paths after the 2026-05-25 package refactor (licensing/, core/, dispatch/) so NPX license activation + --check work again.",
   "bin": {
     "dario-installer": "./bin/install.js",
     "dario-install": "./bin/install.js"
