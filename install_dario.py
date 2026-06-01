@@ -53,8 +53,8 @@ from pathlib import Path
 # Constants — change these via CLI flags, not by editing the file
 # ---------------------------------------------------------------------------
 
-INSTALLER_VERSION = "12.5.0"
-DEFAULT_RELEASE_TAG = "release/v12.5.0"
+INSTALLER_VERSION = "12.5.2"
+DEFAULT_RELEASE_TAG = "release/v12.5.0"  # orchestrator release pinned (installer 12.5.1 installs orchestrator 12.5.0)
 
 REPO_PUBLIC = "https://github.com/bardapraiacaraiva/dario-orchestrator.git"
 REPO_PRIVATE = "https://github.com/bardapraiacaraiva/dario-orchestrator-full.git"
@@ -229,10 +229,18 @@ def setup_venv() -> Path:
 def install_deps(venv_python: Path) -> None:
     step(5, "Install dependencies")
     req = ORCH_DIR / "requirements.txt"
-    if not req.exists():
-        warn("orchestrator/requirements.txt not found — skipping pip install")
-        return
-    run([str(venv_python), "-m", "pip", "install", "-q", "-r", str(req)])
+    pyproject = ORCH_DIR / "pyproject.toml"
+    # Keep pip itself current so PEP 517 builds from pyproject.toml succeed.
+    run([str(venv_python), "-m", "pip", "install", "-q", "--upgrade", "pip"], check=False)
+    if req.exists():
+        run([str(venv_python), "-m", "pip", "install", "-q", "-r", str(req)])
+    elif pyproject.exists():
+        # The orchestrator declares its deps in pyproject.toml ([project].dependencies),
+        # not requirements.txt. Install the package itself so those deps resolve.
+        info("no requirements.txt — installing orchestrator from pyproject.toml")
+        run([str(venv_python), "-m", "pip", "install", "-q", str(ORCH_DIR)])
+    else:
+        warn("no requirements.txt or pyproject.toml — skipping pip install")
 
 
 def activate_license(venv_python: Path, key: str | None) -> None:

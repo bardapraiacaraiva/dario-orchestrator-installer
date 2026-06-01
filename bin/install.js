@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const VERSION = '12.5.1';
+const VERSION = '12.5.2';
 const HOME = os.homedir();
 const CLAUDE_DIR = path.join(HOME, '.claude');
 const ORCH_DIR = path.join(HOME, '.claude', 'orchestrator');
