@@ -5,3 +5,7 @@ node_modules/
 .env.local
 .vscode/
 .idea/
+
+__pycache__/
+*.pyc
+pip/
